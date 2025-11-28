@@ -1,0 +1,164 @@
+datasource db {
+  provider = "postgresql"
+  // url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+/* ---------- ENUMS ---------- */
+
+enum KnowledgeDocumentType {
+  FAQ
+  DOCUMENTO
+  CONTRATO
+  PLAN
+  TICKET
+  COBRO
+  OTRO
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+}
+
+enum ChatChannel {
+  WHATSAPP
+  WEB
+  TELEGRAM
+  SMS
+  OTHER
+}
+
+enum ChatSessionStatus {
+  OPEN
+  CLOSED
+  ARCHIVED
+}
+
+/* ---------- EMPRESA / CLIENTE ---------- */
+
+model Empresa {
+  id            Int              @id @default(autoincrement())
+  nombre        String
+  slug          String           @unique   // "nova-sistemas", etc.
+  activo        Boolean          @default(true)
+
+  creadoEn      DateTime         @default(now())
+  actualizadoEn DateTime         @updatedAt
+
+  clientes      Cliente[]
+  documentos    KnowledgeDocument[]
+  sesiones      ChatSession[]
+}
+
+model Cliente {
+  id            Int       @id @default(autoincrement())
+
+  empresa       Empresa   @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  empresaId     Int
+
+  nombre        String?
+  telefono      String          // ID lógico principal
+  uuid          String? @unique // UUID oficial del CRM (si aplica)
+  crmUsuarioId  Int?            // si tu CRM usa id numérico y te sirve
+
+  creadoEn      DateTime  @default(now())
+  actualizadoEn DateTime  @updatedAt
+
+  sesiones      ChatSession[]
+
+  // Un teléfono no se repite dentro de la misma empresa
+  @@unique([empresaId, telefono])
+}
+
+/* ---------- CHAT ---------- */
+
+model ChatSession {
+  id                   Int               @id @default(autoincrement())
+
+  empresa              Empresa           @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  empresaId            Int
+
+  cliente              Cliente?          @relation(fields: [clienteId], references: [id])
+  clienteId            Int?
+
+  telefono             String
+  canal                ChatChannel
+  estado               ChatSessionStatus @default(OPEN)
+
+  // Integración con CRM: último ticket creado en esta sesión
+  ultimoTicketCrmId    String?
+  ultimoTicketCreadoEn DateTime?
+
+  iniciadoEn           DateTime          @default(now())
+  cerradoEn            DateTime?
+  creadoEn             DateTime          @default(now())
+  actualizadoEn        DateTime          @updatedAt
+
+  mensajes             ChatMessage[]
+
+  @@index([empresaId, telefono, canal, estado])
+}
+
+model ChatMessage {
+  id         Int        @id @default(autoincrement())
+
+  session    ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId  Int
+
+  rol        ChatRole
+  contenido  String
+  tokens     Int?
+
+  creadoEn   DateTime    @default(now())
+  actualizadoEn DateTime         @updatedAt
+
+  @@index([sessionId, creadoEn])
+}
+
+/* ---------- RAG: DOCUMENTOS / CHUNKS ---------- */
+
+model KnowledgeDocument {
+  id          Int                   @id @default(autoincrement())
+
+  empresa     Empresa               @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  empresaId   Int
+
+  tipo        KnowledgeDocumentType
+  externoId   String?
+  origen      String?
+
+  titulo      String
+  descripcion String?
+  idioma      String?
+
+  creadoEn      DateTime            @default(now())
+  actualizadoEn DateTime            @updatedAt
+
+  chunks      KnowledgeChunk[]
+
+  @@index([empresaId, tipo])
+}
+
+model KnowledgeChunk {
+  id         Int               @id @default(autoincrement())
+
+  document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId Int
+
+  indice     Int
+  texto      String
+
+  embedding  Unsupported("vector(4096)")
+  tokens     Int?
+
+  creadoEn       DateTime @default(now())
+  actualizadoEn  DateTime @updatedAt
+
+  @@index([documentId, indice])
+}

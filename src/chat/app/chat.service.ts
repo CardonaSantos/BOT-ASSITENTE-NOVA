@@ -1,0 +1,97 @@
+// src/chat/app/chat.service.ts
+import { Inject, Injectable } from '@nestjs/common';
+import { ChatChannel, ChatRole } from '@prisma/client';
+import {
+  CHAT_SESSION_REPOSITORY,
+  ChatSessionRepository,
+} from '../domain/chat-session.repository';
+import {
+  CHAT_MESSAGE_REPOSITORY,
+  ChatMessageRepository,
+} from '../domain/chat-message.repository';
+import { ChatMessage } from '../entities/chat-message.entity';
+import { ChatSession } from '../entities/chat.entity';
+
+@Injectable()
+export class ChatService {
+  constructor(
+    @Inject(CHAT_SESSION_REPOSITORY)
+    private readonly sessionRepo: ChatSessionRepository,
+    @Inject(CHAT_MESSAGE_REPOSITORY)
+    private readonly messageRepo: ChatMessageRepository,
+  ) {}
+
+  async createSession(dto: {
+    empresaId: number;
+    clienteId?: number | null;
+    telefono: string;
+    canal: ChatChannel;
+  }): Promise<ChatSession> {
+    const session = ChatSession.create({
+      empresaId: dto.empresaId,
+      clienteId: dto.clienteId ?? null,
+      telefono: dto.telefono,
+      canal: dto.canal,
+    });
+
+    return this.sessionRepo.create(session);
+  }
+
+  async ensureOpenSession(opts: {
+    empresaId: number;
+    clienteId?: number | null;
+    telefono: string;
+    canal: ChatChannel;
+  }): Promise<ChatSession> {
+    const existing = await this.sessionRepo.findOpenByEmpresaTelefonoCanal(
+      opts.empresaId,
+      opts.telefono,
+      opts.canal,
+    );
+
+    if (existing) return existing;
+
+    return this.createSession(opts);
+  }
+
+  async closeSession(sessionId: number): Promise<ChatSession> {
+    return this.sessionRepo.closeSession(sessionId);
+  }
+
+  async attachTicketToSession(
+    sessionId: number,
+    ticketId: string,
+  ): Promise<ChatSession> {
+    const session = await this.sessionRepo.findById(sessionId);
+    if (!session) return null;
+
+    session.ultimoTicketCrmId = ticketId;
+    session.ultimoTicketCreadoEn = new Date();
+
+    return this.sessionRepo.update(sessionId, session);
+  }
+
+  async addMessage(opts: {
+    sessionId: number;
+    rol: ChatRole;
+    contenido: string;
+    tokens?: number | null;
+  }): Promise<ChatMessage> {
+    const message = ChatMessage.create({
+      sessionId: opts.sessionId,
+      rol: opts.rol,
+      contenido: opts.contenido,
+      tokens: opts.tokens ?? null,
+    });
+
+    return this.messageRepo.create(message);
+  }
+
+  async getMessages(sessionId: number): Promise<ChatMessage[]> {
+    return this.messageRepo.findBySession(sessionId);
+  }
+
+  async getLastMessages(sessionId: number, limit = 10): Promise<ChatMessage[]> {
+    return this.messageRepo.findLastBySession(sessionId, limit);
+  }
+}
