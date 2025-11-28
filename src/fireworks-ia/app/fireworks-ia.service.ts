@@ -45,7 +45,13 @@ export class FireworksIaService {
         },
       ],
       max_completion_tokens: 500,
-      temperature: 0.2,
+      temperature: 0.7,
+
+      // temperature: 0.4,
+      top_p: 0.9,
+      // top_k: 40,
+      presence_penalty: 0.0,
+      frequency_penalty: 0.2,
     });
 
     return completion.choices[0].message.content ?? '';

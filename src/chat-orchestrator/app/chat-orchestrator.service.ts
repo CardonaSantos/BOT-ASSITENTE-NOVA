@@ -1,6 +1,4 @@
-import { Injectable } from '@nestjs/common';
-import { CreateChatOrchestratorDto } from '../dto/create-chat-orchestrator.dto';
-import { UpdateChatOrchestratorDto } from '../dto/update-chat-orchestrator.dto';
+import { Injectable, Logger } from '@nestjs/common';
 import { EmpresaService } from 'src/empresa/app/empresa.service';
 import { ClienteService } from 'src/cliente/app/cliente.service';
 import { ChatService } from 'src/chat/app/chat.service';
@@ -19,6 +17,7 @@ export interface HandleIncomingMessageParams {
 
 @Injectable()
 export class ChatOrchestratorService {
+  private readonly logger = new Logger(ChatOrchestratorService.name);
   constructor(
     private readonly empresaService: EmpresaService,
     private readonly clienteService: ClienteService,
@@ -77,6 +76,9 @@ export class ChatOrchestratorService {
       telefono,
       canal,
     });
+    this.logger.debug(
+      `Sesión abierta para el cliente: ${session.id} (clienteId=${session.clienteId})`,
+    );
 
     // 4. Guardar mensaje del usuario
     const userMessage = await this.chatService.addMessage({
@@ -87,6 +89,9 @@ export class ChatOrchestratorService {
 
     // 5. Historial (para contexto)
     const history = await this.chatService.getLastMessages(session.id!, 10);
+    this.logger.log(
+      `El historial conseguido es : \n${JSON.stringify(history, null, 2)}`,
+    );
 
     // 6. Buscar contexto en base de conocimiento (si ya tienes ese módulo)
     const knChunks = await this.knowledgeService.search(empresa.id, texto, 5);
