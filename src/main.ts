@@ -3,6 +3,31 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  await app.listen(3000);
+  // comentario
+  app.enableCors({
+    origin: ['http://localhost:5173', ''],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
+
+  await app.listen(process.env.PORT || 3000);
 }
 bootstrap();
+///
+// async function bootstrap() {
+//   const app = await NestFactory.create(AppModule);
+//   // comentario
+//   app.enableCors({
+//     origin: [
+//       'http://localhost:5173',
+//       'https://farmacia-botiquin.up.railway.app',
+//     ],
+//     credentials: true,
+//     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+//     allowedHeaders: ['Content-Type', 'Authorization'],
+//   });
+
+//   await app.listen(process.env.PORT || 3000);
+// }
+// bootstrap();
