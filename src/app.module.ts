@@ -11,6 +11,7 @@ import { ConfigModule } from '@nestjs/config';
 import { EmpresaModule } from './empresa/empresa.module';
 import { ChatModule } from './chat/chat.module';
 import { ClienteModule } from './cliente/cliente.module';
+import { ChatOrchestratorModule } from './chat-orchestrator/chat-orchestrator.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ClienteModule } from './cliente/cliente.module';
     EmpresaModule,
     ChatModule,
     ClienteModule,
+    ChatOrchestratorModule,
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService],

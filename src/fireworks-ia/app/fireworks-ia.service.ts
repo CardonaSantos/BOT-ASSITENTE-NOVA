@@ -1,6 +1,4 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { CreateFireworksIaDto } from '../dto/create-fireworks-ia.dto';
-import { UpdateFireworksIaDto } from '../dto/update-fireworks-ia.dto';
 import { FIREWORKS_CLIENT } from '../infraestructure/fireworks-ia.client';
 import OpenAI from 'openai';
 import { ConfigService } from '@nestjs/config';
@@ -11,6 +9,7 @@ export class FireworksIaService {
   private readonly embeddingModel: string;
 
   private readonly logger = new Logger(FireworksIaService.name);
+
   constructor(
     @Inject(FIREWORKS_CLIENT) private readonly fireworks: OpenAI,
     private readonly config: ConfigService,
@@ -21,7 +20,7 @@ export class FireworksIaService {
 
     this.embeddingModel =
       this.config.get<string>('FIREWORKS_EMBEDDINGS_MODEL') ??
-      'fireworks/qwen3-embedding-8b'; // mejor con el prefijo "fireworks/"
+      'fireworks/qwen3-embedding-8b';
 
     this.logger.log(
       `Modelos Fireworks cargados: chat=${this.chatModel}, embeddings=${this.embeddingModel}`,
@@ -30,8 +29,6 @@ export class FireworksIaService {
 
   /**
    * CEREBRO DEL BOT RESPONDE, FIREWORKS
-   * @param message
-   * @returns
    */
   async simpleReply(message: string) {
     const completion = await this.fireworks.chat.completions.create({
@@ -50,12 +47,12 @@ export class FireworksIaService {
       max_completion_tokens: 500,
       temperature: 0.2,
     });
+
     return completion.choices[0].message.content ?? '';
   }
 
   /**
    * Genera embedding de un solo texto
-   * @param text
    */
   async embedText(text: string): Promise<number[]> {
     const response = await this.fireworks.embeddings.create({
@@ -71,19 +68,23 @@ export class FireworksIaService {
   }
 
   /**
-   * Genera embeddings para varios textos hasta 8 por reques
-   *
-   * @param texts
-   * @returns
+   * Alias para usar en otros servicios (Knowledge, Orquestador, etc.)
+   */
+  async getEmbedding(text: string): Promise<number[]> {
+    return this.embedText(text);
+  }
+
+  /**
+   * Genera embeddings para varios textos hasta 8 por request
    */
   async embedMany(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
 
-    // Fireworks limita a 8 inputs por llamada para algunos clientes
     const response = await this.fireworks.embeddings.create({
       model: this.embeddingModel,
       input: texts,
     });
+
     return response.data.map((data) => data.embedding as number[]);
   }
 }

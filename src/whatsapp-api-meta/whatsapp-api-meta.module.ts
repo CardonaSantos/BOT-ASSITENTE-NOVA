@@ -4,9 +4,11 @@ import { HttpModule } from '@nestjs/axios';
 import { FireworksIaModule } from 'src/fireworks-ia/fireworks-ia.module';
 import { WhatsappApiMetaController } from './presentation/whatsapp-api-meta.controller';
 import { WhatsappApiMetaService } from './app/whatsapp-api-meta.service';
+import { ChatOrchestratorModule } from 'src/chat-orchestrator/chat-orchestrator.module';
 
 @Module({
   imports: [
+    ChatOrchestratorModule,
     ConfigModule,
     FireworksIaModule,
     HttpModule.registerAsync({
