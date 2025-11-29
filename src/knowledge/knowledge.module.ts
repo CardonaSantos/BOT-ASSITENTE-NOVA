@@ -3,11 +3,19 @@ import { KnowledgeController } from './presentation/knowledge.controller';
 import { KnowledgeService } from './app/knowledge.service';
 import { PrismaModuleModule } from 'src/prisma/prisma-module/prisma-module.module';
 import { FireworksIaModule } from 'src/fireworks-ia/fireworks-ia.module';
+import { KNOWLEDGE_REPOSITORY } from './domain/knowledge.repository';
+import { PrismaKnowledgeRepository } from './infraestructure/prisma-knowledge.repository';
 
 @Module({
   imports: [PrismaModuleModule, FireworksIaModule],
   controllers: [KnowledgeController],
-  providers: [KnowledgeService],
+  providers: [
+    KnowledgeService,
+    {
+      provide: KNOWLEDGE_REPOSITORY,
+      useClass: PrismaKnowledgeRepository,
+    },
+  ],
   exports: [KnowledgeService],
 })
 export class KnowledgeModule {}

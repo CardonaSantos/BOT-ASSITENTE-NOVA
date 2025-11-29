@@ -25,6 +25,10 @@ export class CreateKnowledgeDocumentDto {
 
   @IsOptional()
   @IsString()
+  origen?: string;
+
+  @IsOptional()
+  @IsString()
   idioma?: string;
 
   @IsString()

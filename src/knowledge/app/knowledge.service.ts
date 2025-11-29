@@ -1,8 +1,15 @@
 // src/knowledge/app/knowledge.service.ts
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma-service/prisma-service.service';
 import { KnowledgeDocumentType } from '@prisma/client';
 import { FireworksIaService } from 'src/fireworks-ia/app/fireworks-ia.service';
+import {
+  KNOWLEDGE_REPOSITORY,
+  KnowledgeRepository,
+} from '../domain/knowledge.repository';
+import { CreateKnowledgeDocumentDto } from '../dto/create-knowledge-document.dto';
+import { Knowledge } from '../entities/knowledge.entity';
+import { UpdateKnowledgeDto } from '../dto/update-knowledge.dto';
 
 export interface KnowledgeSearchResult {
   id: number;
@@ -15,64 +22,92 @@ export interface KnowledgeSearchResult {
 
 @Injectable()
 export class KnowledgeService {
+  private readonly logger = new Logger(KnowledgeService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly fireworksIa: FireworksIaService,
+
+    @Inject(KNOWLEDGE_REPOSITORY)
+    private readonly repo: KnowledgeRepository,
   ) {}
+  // METODOS PARA CARGA DE DATOS Y ACTUALIZACIONES
 
-  /**
-   * Crea un documento de conocimiento y genera chunks + embeddings.
-   */
-  async createDocumentWithChunks(opts: {
-    empresaId: number;
-    tipo: KnowledgeDocumentType;
-    titulo: string;
-    descripcion?: string;
-    idioma?: string;
-    textoLargo: string;
-  }) {
-    const { empresaId, tipo, titulo, descripcion, idioma, textoLargo } = opts;
-
-    // 1) Crear documento
-    const doc = await this.prisma.knowledgeDocument.create({
-      data: {
-        empresaId,
-        tipo,
-        titulo,
-        descripcion,
-        idioma,
-      },
-    });
-
-    // 2) Partir texto en chunks
-    const chunks = this.chunkText(textoLargo, 800); // 800 chars aprox
-
-    // 3) Por cada chunk: embedding + insert con pgvector
-    let indice = 0;
-    for (const texto of chunks) {
-      indice++;
-
-      const embedding = await this.fireworksIa.getEmbedding(texto); // debes tener este método
-      const vectorLiteral = JSON.stringify(embedding); // "[...]" para usar ::vector
-
-      await this.prisma.$executeRawUnsafe(
-        `
-        INSERT INTO "KnowledgeChunk" ("documentId", "indice", "texto", "embedding")
-        VALUES ($1, $2, $3, $4::vector)
-        `,
-        doc.id,
-        indice,
-        texto,
-        vectorLiteral,
-      );
+  async createNewKnowledge(dto: CreateKnowledgeDocumentDto) {
+    try {
+      const data = Knowledge.create({
+        empresaId: dto.empresaId,
+        descripcion: dto.descripcion,
+        titulo: dto.titulo,
+        externoId: null,
+        tipo: dto.tipo,
+        origen: dto.origen,
+        textoLargo: dto.textoLargo,
+      });
+      const newKnowledge = await this.repo.create(data);
+      this.logger.log('El nuevo conocimiento es: ', newKnowledge);
+    } catch (error) {
+      this.logger.debug('Error ocurrido es:', error);
     }
-
-    return doc;
   }
 
-  /**
-   * Búsqueda vectorial básica: top K chunks por empresa + query.
-   */
+  // ----------------------------
+  // OBTENER UNO
+  // ----------------------------
+  async findOne(id: number): Promise<Knowledge> {
+    const result = await this.repo.findById(id);
+    if (!result) {
+      throw new NotFoundException('Documento de conocimiento no encontrado');
+    }
+    return result;
+  }
+
+  // ----------------------------
+  // OBTENER TODOS POR EMPRESA
+  // ----------------------------
+  async findAllByEmpresa(empresaId: number): Promise<Knowledge[]> {
+    return this.repo.findAllByEmpresa(empresaId);
+  }
+
+  // ----------------------------
+  // ACTUALIZAR
+  // ----------------------------
+  async updateKnowledge(
+    id: number,
+    dto: UpdateKnowledgeDto,
+  ): Promise<Knowledge> {
+    // Si quieres re-generar embeddings al cambiar el texto, eso se haría
+    // aquí (llamando al repo y rehaciendo chunks).
+    // De momento solo actualizamos metadatos y descripción.
+    const partial: Partial<Knowledge> = {
+      titulo: dto.titulo,
+      descripcion: dto.textoLargo ?? dto.descripcion,
+      tipo: dto.tipo,
+      origen: dto.origen,
+      // idioma no está aún en la entidad, pero podrías agregarlo si lo necesitas
+    };
+
+    const updated = await this.repo.update(id, partial);
+    if (!updated) {
+      throw new NotFoundException('Documento de conocimiento no encontrado');
+    }
+
+    return updated;
+  }
+
+  // ----------------------------
+  // ELIMINAR
+  // ----------------------------
+  async deleteKnowledge(id: number): Promise<Knowledge | null> {
+    const deleted = await this.repo.deleteById(id);
+    if (!deleted) {
+      throw new NotFoundException('Documento de conocimiento no encontrado');
+    }
+    return deleted;
+  }
+
+  // ----------------------------
+  // BÚSQUEDA VECTORIAL
+  // ----------------------------
   async search(
     empresaId: number,
     query: string,
@@ -103,6 +138,42 @@ export class KnowledgeService {
 
     return rows;
   }
+
+  // METODOS PARA CARGA DE DATOS Y ACTUALIZACIONES
+
+  /**
+   * Búsqueda vectorial básica: top K chunks por empresa + query.
+   */
+  // async search(
+  //   empresaId: number,
+  //   query: string,
+  //   limit = 5,
+  // ): Promise<KnowledgeSearchResult[]> {
+  //   const embedding = await this.fireworksIa.getEmbedding(query);
+  //   const vectorLiteral = JSON.stringify(embedding);
+
+  //   const rows = await this.prisma.$queryRawUnsafe<KnowledgeSearchResult[]>(
+  //     `
+  //     SELECT
+  //       kc."id",
+  //       kc."texto",
+  //       kc."documentId",
+  //       kc."indice",
+  //       kd."titulo",
+  //       kd."tipo"
+  //     FROM "KnowledgeChunk" kc
+  //     JOIN "KnowledgeDocument" kd ON kc."documentId" = kd."id"
+  //     WHERE kd."empresaId" = $1
+  //     ORDER BY kc."embedding" <-> $2::vector
+  //     LIMIT $3
+  //     `,
+  //     empresaId,
+  //     vectorLiteral,
+  //     limit,
+  //   );
+
+  //   return rows;
+  // }
 
   /**
    * Parte un texto largo en chunks (~maxLen chars),

@@ -130,13 +130,14 @@ model KnowledgeDocument {
   empresaId   Int
 
   tipo        KnowledgeDocumentType
-  externoId   String?
+  externoId   Int?
   origen      String?
 
   titulo      String
   descripcion String?
-  idioma      String?
+  textoLargo String? @db.Text
 
+  // textoLargo   String
   creadoEn      DateTime            @default(now())
   actualizadoEn DateTime            @updatedAt
 

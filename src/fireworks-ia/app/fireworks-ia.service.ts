@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { FIREWORKS_CLIENT } from '../infraestructure/fireworks-ia.client';
 import OpenAI from 'openai';
 import { ConfigService } from '@nestjs/config';
+import { ChatCompletionMessageParam } from 'openai/resources/index';
 
 @Injectable()
 export class FireworksIaService {
@@ -30,26 +31,45 @@ export class FireworksIaService {
   /**
    * CEREBRO DEL BOT RESPONDE, FIREWORKS
    */
-  async simpleReply(message: string) {
+  async replyWithContext(params: {
+    empresaNombre: string;
+    context: string;
+    historyText: string;
+    question: string;
+  }): Promise<string> {
+    const { empresaNombre, context, historyText, question } = params;
+
+    const messages: ChatCompletionMessageParam[] = [
+      {
+        role: 'system',
+        content:
+          `Eres el asistente de soporte al cliente y agente del CRM de ${empresaNombre}. ` +
+          `Respondes siempre alegre, amable y creativo, pero muy claro y preciso.`,
+      },
+      {
+        role: 'system',
+        content:
+          `Contexto de la base de conocimiento (puede estar incompleto):\n` +
+          (context || '- sin contexto -'),
+      },
+      {
+        role: 'system',
+        content:
+          `Historial reciente de la conversación:\n` +
+          (historyText || '- sin historial -'),
+      },
+      {
+        role: 'user',
+        content: question, // 👈 aquí va SOLO la pregunta actual
+      },
+    ];
+
     const completion = await this.fireworks.chat.completions.create({
       model: this.chatModel,
-      messages: [
-        {
-          role: 'system',
-          content:
-            'Eres el asistente de soporte al cliente, y agente del CRM de Nova Sistemas S.A. Responde siempre, alegre, amable y creativo',
-        },
-        {
-          role: 'user',
-          content: message,
-        },
-      ],
+      messages,
       max_completion_tokens: 500,
-      temperature: 0.7,
-
-      // temperature: 0.4,
+      temperature: 0.4,
       top_p: 0.9,
-      // top_k: 40,
       presence_penalty: 0.0,
       frequency_penalty: 0.2,
     });

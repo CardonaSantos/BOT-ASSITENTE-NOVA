@@ -39,9 +39,9 @@ export class WhatsappApiMetaController {
    */
   @Post('send-test')
   async sentTest(@Body() body: { to: string; message: string }) {
-    const reply = await this.fireworksIa.simpleReply(body.message);
-    await this.whatsappApiMetaService.sendText(body.to, reply);
-    return { ok: true };
+    // const reply = await this.fireworksIa.simpleReply(body.message);
+    // await this.whatsappApiMetaService.sendText(body.to, reply);
+    // return { ok: true };
   }
 
   /**

@@ -50,7 +50,7 @@ export class ChatOrchestratorService {
       empresaNombreFallback,
     );
 
-    // 2. Cliente por teléfono
+    // 2. Cliente
     let cliente = await this.clienteService.findByEmpresaAndTelefono(
       empresa.id,
       telefono,
@@ -66,19 +66,16 @@ export class ChatOrchestratorService {
         empresaId: empresa.id,
         telefono,
         nombre,
-      } as any); // si tu DTO necesita más props, se las añades
+      } as any);
     }
 
-    // 3. Sesión abierta
+    // 3. Sesión
     const session = await this.chatService.ensureOpenSession({
       empresaId: empresa.id,
       clienteId: cliente.id,
       telefono,
       canal,
     });
-    this.logger.debug(
-      `Sesión abierta para el cliente: ${session.id} (clienteId=${session.clienteId})`,
-    );
 
     // 4. Guardar mensaje del usuario
     const userMessage = await this.chatService.addMessage({
@@ -87,18 +84,8 @@ export class ChatOrchestratorService {
       contenido: texto,
     });
 
-    // 5. Historial (para contexto)
+    // 5. Historial
     const history = await this.chatService.getLastMessages(session.id!, 10);
-    this.logger.log(
-      `El historial conseguido es : \n${JSON.stringify(history, null, 2)}`,
-    );
-
-    // 6. Buscar contexto en base de conocimiento (si ya tienes ese módulo)
-    const knChunks = await this.knowledgeService.search(empresa.id, texto, 5);
-
-    const contextText = knChunks
-      .map((c) => `(${c.tipo}) ${c.titulo}: ${c.texto}`)
-      .join('\n');
 
     const historyText = history
       .map((m) =>
@@ -108,23 +95,22 @@ export class ChatOrchestratorService {
       )
       .join('\n');
 
-    const prompt = `
-Eres el asistente de soporte de ${empresa.nombre}.
-Contexto de la base de conocimiento:
-${contextText || '- sin contexto -'}
+    // 6. Buscar contexto en base de conocimiento
+    const knChunks = await this.knowledgeService.search(empresa.id, texto, 5);
 
-Historial reciente:
-${historyText}
+    const contextText = knChunks
+      .map((c) => `(${c.tipo}) ${c.titulo}:\n${c.texto}`)
+      .join('\n\n---\n\n');
 
-Mensaje actual del usuario:
-"${texto}"
+    // 7. Pedir respuesta al modelo usando RAG
+    const reply = await this.fireworksIa.replyWithContext({
+      empresaNombre: empresa.nombre,
+      context: contextText,
+      historyText,
+      question: texto,
+    });
 
-Responde de forma clara, y en español.
-`.trim();
-
-    const reply = await this.fireworksIa.simpleReply(prompt);
-
-    // 7. Guardar respuesta del bot
+    // 8. Guardar respuesta del bot
     const botMessage = await this.chatService.addMessage({
       sessionId: session.id!,
       rol: ChatRole.ASSISTANT,

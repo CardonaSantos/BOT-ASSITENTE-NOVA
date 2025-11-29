@@ -1,4 +1,31 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateKnowledgeDto } from './create-knowledge.dto';
+import { IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { KnowledgeDocumentType } from '@prisma/client';
 
-export class UpdateKnowledgeDto extends PartialType(CreateKnowledgeDto) {}
+export class UpdateKnowledgeDto {
+  @IsOptional()
+  @IsEnum(KnowledgeDocumentType)
+  tipo?: KnowledgeDocumentType;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  titulo?: string;
+
+  @IsOptional()
+  @IsString()
+  descripcion?: string;
+
+  @IsOptional()
+  @IsString()
+  origen?: string;
+
+  @IsOptional()
+  @IsString()
+  idioma?: string;
+
+  // Si quisieras permitir actualizar también el texto largo
+  @IsOptional()
+  @IsString()
+  @MinLength(10)
+  textoLargo?: string;
+}
