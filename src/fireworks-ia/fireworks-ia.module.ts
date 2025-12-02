@@ -4,9 +4,10 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { FIREWORKS_CLIENT } from './infraestructure/fireworks-ia.client';
 import OpenAI from 'openai';
 import { FireworksIaService } from './app/fireworks-ia.service';
+import { PrismaModuleModule } from 'src/prisma/prisma-module/prisma-module.module';
 
 @Module({
-  imports: [ConfigModule],
+  imports: [ConfigModule, PrismaModuleModule],
   controllers: [FireworksIaController],
   providers: [
     {

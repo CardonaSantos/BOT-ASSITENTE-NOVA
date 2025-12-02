@@ -130,12 +130,37 @@ export class PrismaKnowledgeRepository implements KnowledgeRepository {
         where: {
           id,
         },
-        data: data,
+        data: {
+          titulo: data.titulo,
+          descripcion: data.descripcion,
+          textoLargo: data.textoLargo,
+          tipo: data.tipo,
+          origen: data.origen,
+          empresaId: data.empresaId,
+          externoId: data.externoId,
+        },
       });
 
       return this.toDomain(rowToUpdate);
     } catch (error) {
       throwFatalError(error, this.logger, 'PrismaKnowledgeRepository - update');
+    }
+  }
+
+  //CONOCIMIENTOS PARA CRM
+  async findAll(): Promise<Knowledge[]> {
+    try {
+      const rows = await this.prisma.knowledgeDocument.findMany({});
+
+      const rowsFormatted = rows.map((r) => this.toDomain(r));
+
+      return rowsFormatted;
+    } catch (error) {
+      throwFatalError(
+        error,
+        this.logger,
+        'PrismaKnowledgeRepository - findAllCrm',
+      );
     }
   }
 

@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   ParseIntPipe,
+  Logger,
 } from '@nestjs/common';
 import { KnowledgeService } from '../app/knowledge.service';
 import { CreateKnowledgeDocumentDto } from '../dto/create-knowledge-document.dto';
@@ -15,6 +16,7 @@ import { UpdateKnowledgeDto } from '../dto/update-knowledge.dto';
 
 @Controller('knowledge')
 export class KnowledgeController {
+  private readonly logger = new Logger(KnowledgeController.name);
   constructor(private readonly knowledgeService: KnowledgeService) {}
 
   // CREATE
@@ -29,6 +31,11 @@ export class KnowledgeController {
     return this.knowledgeService.findAllByEmpresa(empresaId);
   }
 
+  @Get('')
+  findAllKnowledge() {
+    return this.knowledgeService.findAllKnowledge();
+  }
+
   // GET ONE
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
@@ -41,6 +48,7 @@ export class KnowledgeController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateKnowledgeDto,
   ) {
+    this.logger.log('DTO: ', dto);
     return this.knowledgeService.updateKnowledge(id, dto);
   }
 

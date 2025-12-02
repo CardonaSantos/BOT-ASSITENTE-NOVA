@@ -38,7 +38,6 @@ export class Knowledge {
       props.titulo,
       props.descripcion,
       props.textoLargo,
-
       undefined, //create
       undefined, //updated
     );

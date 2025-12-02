@@ -1,4 +1,10 @@
-import { IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  MinLength,
+} from 'class-validator';
 import { KnowledgeDocumentType } from '@prisma/client';
 
 export class UpdateKnowledgeDto {
@@ -28,4 +34,8 @@ export class UpdateKnowledgeDto {
   @IsString()
   @MinLength(10)
   textoLargo?: string;
+
+  @IsOptional()
+  @IsInt()
+  empresaId: number;
 }

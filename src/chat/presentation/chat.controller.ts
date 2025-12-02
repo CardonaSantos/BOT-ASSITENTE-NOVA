@@ -68,7 +68,7 @@ export class ChatController {
   getMessages(@Param('id') id: string, @Query('limit') limit?: string) {
     const parsedLimit = limit ? Number(limit) : undefined;
     if (parsedLimit) {
-      return this.chatService.getLastMessages(+id, parsedLimit);
+      return this.chatService.getLastMessages(+id);
     }
     return this.chatService.getMessages(+id);
   }

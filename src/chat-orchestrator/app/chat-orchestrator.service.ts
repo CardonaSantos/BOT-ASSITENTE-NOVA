@@ -44,13 +44,13 @@ export class ChatOrchestratorService {
       nombreClienteWhatsApp,
     } = params;
 
-    // 1. Empresa
+    //  Empresa
     const empresa = await this.empresaService.ensureBySlug(
       empresaSlug,
       empresaNombreFallback,
     );
 
-    // 2. Cliente
+    //  Cliente
     let cliente = await this.clienteService.findByEmpresaAndTelefono(
       empresa.id,
       telefono,
@@ -69,7 +69,7 @@ export class ChatOrchestratorService {
       } as any);
     }
 
-    // 3. Sesión
+    //  Sesión
     const session = await this.chatService.ensureOpenSession({
       empresaId: empresa.id,
       clienteId: cliente.id,
@@ -77,15 +77,15 @@ export class ChatOrchestratorService {
       canal,
     });
 
-    // 4. Guardar mensaje del usuario
+    //  Guardar mensaje del usuario
     const userMessage = await this.chatService.addMessage({
       sessionId: session.id!,
       rol: ChatRole.USER,
       contenido: texto,
     });
 
-    // 5. Historial
-    const history = await this.chatService.getLastMessages(session.id!, 10);
+    //  Historial
+    const history = await this.chatService.getLastMessages(session.id!);
 
     const historyText = history
       .map((m) =>
@@ -95,14 +95,21 @@ export class ChatOrchestratorService {
       )
       .join('\n');
 
-    // 6. Buscar contexto en base de conocimiento
-    const knChunks = await this.knowledgeService.search(empresa.id, texto, 5);
+    //Buscar contexto en base de conocimiento
+    const knChunks = await this.knowledgeService.search(empresa.id, texto, 7);
 
     const contextText = knChunks
-      .map((c) => `(${c.tipo}) ${c.titulo}:\n${c.texto}`)
+      .map(
+        (c, idx) =>
+          `#${idx + 1} [distance=${c.distance?.toFixed(4) ?? 'N/A'}] (${c.tipo}) ${c.titulo}:\n${c.texto}`,
+      )
       .join('\n\n---\n\n');
 
-    // 7. Pedir respuesta al modelo usando RAG
+    this.logger.debug(
+      `[RAG] Contexto generado (${knChunks.length} chunks):\n` +
+        contextText.slice(0, 2000), // evita logs enormes
+    );
+    //  Pedir respuesta al modelo usando RAG
     const reply = await this.fireworksIa.replyWithContext({
       empresaNombre: empresa.nombre,
       context: contextText,
@@ -110,7 +117,7 @@ export class ChatOrchestratorService {
       question: texto,
     });
 
-    // 8. Guardar respuesta del bot
+    // Guardar respuesta del bot
     const botMessage = await this.chatService.addMessage({
       sessionId: session.id!,
       rol: ChatRole.ASSISTANT,

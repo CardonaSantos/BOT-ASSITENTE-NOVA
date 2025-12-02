@@ -44,6 +44,7 @@ export class PrismaChatSessionRepository implements ChatSessionRepository {
           ultimoTicketCreadoEn: session.ultimoTicketCreadoEn ?? undefined,
           iniciadoEn: session.iniciadoEn ?? undefined,
           cerradoEn: session.cerradoEn ?? undefined,
+          botId: 1,
         },
       });
 
@@ -71,6 +72,7 @@ export class PrismaChatSessionRepository implements ChatSessionRepository {
           ultimoTicketCreadoEn: data.ultimoTicketCreadoEn,
           iniciadoEn: data.iniciadoEn,
           cerradoEn: data.cerradoEn,
+          botId: 1,
         },
       });
 
@@ -133,6 +135,7 @@ export class PrismaChatSessionRepository implements ChatSessionRepository {
         data: {
           estado: ChatSessionStatus.CLOSED,
           cerradoEn: new Date(),
+          botId: 1,
         },
       });
 

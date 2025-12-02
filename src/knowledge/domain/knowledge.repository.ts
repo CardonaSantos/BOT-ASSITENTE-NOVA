@@ -8,4 +8,6 @@ export interface KnowledgeRepository {
   findById(id: number): Promise<Knowledge | null>;
   deleteById(id: number): Promise<Knowledge | null>;
   findAllByEmpresa(empresaId: number): Promise<Knowledge[]>;
+
+  findAll(): Promise<Knowledge[]>;
 }

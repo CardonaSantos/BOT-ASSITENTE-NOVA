@@ -63,15 +63,22 @@ export class PrismaChatMessageRepository implements ChatMessageRepository {
     }
   }
 
-  async findLastBySession(
-    sessionId: number,
-    limit: number,
-  ): Promise<ChatMessage[]> {
+  async findLastBySession(sessionId: number): Promise<ChatMessage[]> {
     try {
+      const botParams = await this.prisma.bot.findUnique({
+        where: {
+          id: 1,
+        },
+        select: {
+          id: true,
+          maxHistoryMessages: true,
+        },
+      });
+
       const rows = await this.prisma.chatMessage.findMany({
         where: { sessionId },
         orderBy: { creadoEn: 'desc' },
-        take: limit,
+        take: botParams.maxHistoryMessages ?? 10,
       });
 
       // devolvemos en orden cronológico ascendente

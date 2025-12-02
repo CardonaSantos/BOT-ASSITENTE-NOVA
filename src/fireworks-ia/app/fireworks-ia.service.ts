@@ -3,6 +3,7 @@ import { FIREWORKS_CLIENT } from '../infraestructure/fireworks-ia.client';
 import OpenAI from 'openai';
 import { ConfigService } from '@nestjs/config';
 import { ChatCompletionMessageParam } from 'openai/resources/index';
+import { PrismaService } from 'src/prisma/prisma-service/prisma-service.service';
 
 @Injectable()
 export class FireworksIaService {
@@ -12,6 +13,8 @@ export class FireworksIaService {
   private readonly logger = new Logger(FireworksIaService.name);
 
   constructor(
+    private readonly prisma: PrismaService,
+
     @Inject(FIREWORKS_CLIENT) private readonly fireworks: OpenAI,
     private readonly config: ConfigService,
   ) {
@@ -39,39 +42,101 @@ export class FireworksIaService {
   }): Promise<string> {
     const { empresaNombre, context, historyText, question } = params;
 
+    const botParams = await this.prisma.bot.findUnique({
+      where: { id: 1 },
+      select: {
+        id: true,
+        temperature: true,
+        presencePenalty: true,
+        frequencyPenalty: true,
+        maxCompletionTokens: true,
+        topP: true,
+        contextPrompt: true,
+        historyPrompt: true,
+        outputStyle: true,
+        systemPrompt: true,
+      },
+    });
+
+    if (!botParams) {
+      throw new Error('Configuración del bot no encontrada');
+    }
+
+    const temperature = botParams.temperature ?? 0.3;
+    const top_p = botParams.topP ?? 0.9;
+    const presence_penalty = botParams.presencePenalty ?? 0;
+    const frequency_penalty = botParams.frequencyPenalty ?? 0.2;
+    const max_completion_tokens = botParams.maxCompletionTokens ?? 512;
+
+    const contextSection =
+      context && context.trim().length > 0
+        ? `### CONTEXTO (base de conocimiento de la empresa "${empresaNombre}")
+
+Usa únicamente la información que aparece aquí cuando sea relevante:
+
+"""
+${context}
+"""
+
+Instrucciones específicas para usar el contexto:
+${botParams.contextPrompt ?? 'No inventes datos que no aparezcan explícitamente en el contexto. Si no encuentras la información, dilo claramente.'}
+`
+        : `### CONTEXTO
+
+No se encontró contexto relevante en la base de conocimiento.
+Si para responder necesitas información específica de la empresa, dilo claramente y no inventes datos.`;
+
+    const historySection =
+      historyText && historyText.trim().length > 0
+        ? `### HISTORIAL RECIENTE DE LA CONVERSACIÓN
+
+"""
+${historyText}
+"""
+
+Instrucciones para usar el historial:
+${botParams.historyPrompt ?? 'Mantén coherencia con lo ya dicho, pero no repitas textualmente todo el historial.'}
+`
+        : `### HISTORIAL
+
+No hay historial reciente. Trata este mensaje como el inicio de una nueva conversación.`;
+
+    const outputSection = `### ESTILO Y FORMATO DE RESPUESTA
+
+${botParams.outputStyle ?? 'Responde en texto plano, claro, amable y profesional.'}`;
+
+    const baseSystemPrompt = `
+Eres el asistente virtual de soporte al cliente y agente del CRM de la empresa "${empresaNombre}".
+
+Instrucciones base del sistema:
+${botParams.systemPrompt ?? 'Sé amable, claro y útil. Responde siempre en español neutro.'}
+
+${contextSection}
+
+${historySection}
+
+${outputSection}
+  `.trim();
+
     const messages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
-        content:
-          `Eres el asistente de soporte al cliente y agente del CRM de ${empresaNombre}. ` +
-          `Respondes siempre alegre, amable y creativo, pero muy claro y preciso. No dibujes tablas, ya que responderás como si estuvieras enviando mensajes por whatsapp. Puedes usar textos que se conviertan a negrita por whatsapp,pero fuera del texto plano, seccionado o emojis no debes pasar, ya que tu respuesta será siempre enviada por whatsapp.`,
-      },
-      {
-        role: 'system',
-        content:
-          `Contexto de la base de conocimiento (puede estar incompleto):\n` +
-          (context || '- sin contexto -'),
-      },
-      {
-        role: 'system',
-        content:
-          `Historial reciente de la conversación:\n` +
-          (historyText || '- sin historial -'),
+        content: baseSystemPrompt,
       },
       {
         role: 'user',
-        content: question, // 👈 aquí va SOLO la pregunta actual
+        content: question,
       },
     ];
 
     const completion = await this.fireworks.chat.completions.create({
       model: this.chatModel,
       messages,
-      max_completion_tokens: 500,
-      temperature: 0.4,
-      top_p: 0.9,
-      presence_penalty: 0.0,
-      frequency_penalty: 0.2,
+      max_completion_tokens,
+      temperature,
+      top_p,
+      presence_penalty,
+      frequency_penalty,
     });
 
     return completion.choices[0].message.content ?? '';

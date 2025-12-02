@@ -18,6 +18,7 @@ export interface KnowledgeSearchResult {
   indice: number;
   titulo: string;
   tipo: KnowledgeDocumentType;
+  distance: number;
 }
 
 @Injectable()
@@ -83,6 +84,8 @@ export class KnowledgeService {
       descripcion: dto.textoLargo ?? dto.descripcion,
       tipo: dto.tipo,
       origen: dto.origen,
+      textoLargo: dto.textoLargo,
+      empresaId: dto.empresaId ?? 1,
       // idioma no está aún en la entidad, pero podrías agregarlo si lo necesitas
     };
 
@@ -111,32 +114,47 @@ export class KnowledgeService {
   async search(
     empresaId: number,
     query: string,
-    limit = 5,
+    limit = 7,
   ): Promise<KnowledgeSearchResult[]> {
     const embedding = await this.fireworksIa.getEmbedding(query);
     const vectorLiteral = JSON.stringify(embedding);
 
     const rows = await this.prisma.$queryRawUnsafe<KnowledgeSearchResult[]>(
       `
-      SELECT
-        kc."id",
-        kc."texto",
-        kc."documentId",
-        kc."indice",
-        kd."titulo",
-        kd."tipo"
-      FROM "KnowledgeChunk" kc
-      JOIN "KnowledgeDocument" kd ON kc."documentId" = kd."id"
-      WHERE kd."empresaId" = $1
-      ORDER BY kc."embedding" <-> $2::vector
-      LIMIT $3
-      `,
+  SELECT
+    kc."id",
+    kc."texto",
+    kc."documentId",
+    kc."indice",
+    kd."titulo",
+    kd."tipo",
+    kc."embedding" <-> $2::vector AS "distance"
+  FROM "KnowledgeChunk" kc
+  JOIN "KnowledgeDocument" kd ON kc."documentId" = kd."id"
+  WHERE kd."empresaId" = $1
+  ORDER BY "distance" ASC
+  LIMIT $3
+  `,
       empresaId,
       vectorLiteral,
       limit,
     );
 
+    this.logger.debug(
+      `[RAG] Resultados para empresaId=${empresaId}, limit=${limit}: ${rows.length} chunks`,
+    );
+
+    rows.forEach((row, idx) => {
+      this.logger.debug(
+        `[RAG] #${idx} docId=${row.documentId} idx=${row.indice} titulo="${row.titulo}" tipo=${row.tipo} distance=${row.distance}`,
+      );
+    });
+
     return rows;
+  }
+
+  async findAllKnowledge() {
+    return this.repo.findAll();
   }
 
   // METODOS PARA CARGA DE DATOS Y ACTUALIZACIONES

@@ -91,7 +91,7 @@ export class ChatService {
     return this.messageRepo.findBySession(sessionId);
   }
 
-  async getLastMessages(sessionId: number, limit = 10): Promise<ChatMessage[]> {
-    return this.messageRepo.findLastBySession(sessionId, limit);
+  async getLastMessages(sessionId: number): Promise<ChatMessage[]> {
+    return this.messageRepo.findLastBySession(sessionId);
   }
 }

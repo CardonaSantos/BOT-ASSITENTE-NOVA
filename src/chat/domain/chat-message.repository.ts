@@ -6,5 +6,5 @@ export const CHAT_MESSAGE_REPOSITORY = Symbol('CHAT_MESSAGE_REPOSITORY');
 export interface ChatMessageRepository {
   create(message: ChatMessage): Promise<ChatMessage>;
   findBySession(sessionId: number): Promise<ChatMessage[]>;
-  findLastBySession(sessionId: number, limit: number): Promise<ChatMessage[]>;
+  findLastBySession(sessionId: number): Promise<ChatMessage[]>;
 }

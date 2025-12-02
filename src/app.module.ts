@@ -12,6 +12,7 @@ import { EmpresaModule } from './empresa/empresa.module';
 import { ChatModule } from './chat/chat.module';
 import { ClienteModule } from './cliente/cliente.module';
 import { ChatOrchestratorModule } from './chat-orchestrator/chat-orchestrator.module';
+import { BotModule } from './bot/bot.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { ChatOrchestratorModule } from './chat-orchestrator/chat-orchestrator.mo
     ChatModule,
     ClienteModule,
     ChatOrchestratorModule,
+    BotModule,
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService],

@@ -54,7 +54,61 @@ model Empresa {
   clientes      Cliente[]
   documentos    KnowledgeDocument[]
   sesiones      ChatSession[]
+  bots          Bot[]           
 }
+
+enum BotStatus {
+  ACTIVE
+  DISABLED
+}
+
+model Bot {
+  id           Int       @id @default(autoincrement())
+
+  empresa      Empresa   @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  empresaId    Int
+
+  nombre       String
+  slug         String    @unique
+  descripcion  String?
+
+  // LLM / proveedor
+  provider     String    @default("fireworks")
+  model        String    @default("accounts/fireworks/models/gpt-oss-120b")
+
+  // 🔹 Comportamiento principal (persona)
+  // Puedes tratarlo como template: "Eres el asistente de {{empresaNombre}} ..."
+  systemPrompt   String   @db.Text
+
+  // 🔹 Cómo integrar contexto de RAG e historial
+  contextPrompt  String?  @db.Text // "Te daré contexto de base de conocimiento: {{context}} ..."
+  historyPrompt  String?  @db.Text // "A continuación tienes el historial reciente: {{history}} ..."
+
+  // 🔹 Estilo de salida (WhatsApp / web / etc.)
+  outputStyle    String?  @db.Text
+  // Ej: "Responde como mensaje de WhatsApp: sin tablas, solo texto plano, negritas con *...* y emojis."
+
+  // 🔹 Parámetros del modelo (performance en el sentido de generación)
+  maxCompletionTokens Int?    @default(500)
+  temperature         Float   @default(0.7)
+  topP                Float?  @default(0.9)
+  frequencyPenalty    Float?  @default(0.2)
+  presencePenalty     Float?  @default(0.0)
+
+  maxHistoryMessages  Int?    @default(15)
+  status        BotStatus @default(ACTIVE)
+
+  creadoEn      DateTime  @default(now())
+  actualizadoEn DateTime  @updatedAt
+
+  sesiones       ChatSession[]
+  // knowledgeLinks BotKnowledge[]
+  // channelConfigs BotChannelConfig[]
+}
+
+
+
+
 
 model Cliente {
   id            Int       @id @default(autoincrement())
@@ -83,6 +137,10 @@ model ChatSession {
 
   empresa              Empresa           @relation(fields: [empresaId], references: [id], onDelete: Cascade)
   empresaId            Int
+
+  // 👇 Qué bot atendió esta sesión
+  bot                  Bot?              @relation(fields: [botId], references: [id])
+  botId                Int?
 
   cliente              Cliente?          @relation(fields: [clienteId], references: [id])
   clienteId            Int?
@@ -163,3 +221,14 @@ model KnowledgeChunk {
 
   @@index([documentId, indice])
 }
+
+/* ---------- RAG: DOCUMENTOS / CHUNKS ---------- */
+
+
+
+
+
+
+
+
+
