@@ -21,7 +21,7 @@ import { ChatOrchestratorModule } from 'src/chat-orchestrator/chat-orchestrator.
 import { ChatChannel } from '@prisma/client';
 import { ChatOrchestratorService } from 'src/chat-orchestrator/app/chat-orchestrator.service';
 
-@Controller('whatsapp-meta')
+@Controller('whatsapp-meta-verify')
 export class WhatsappApiMetaController {
   private readonly logger = new Logger(WhatsappApiMetaController.name);
 
@@ -53,23 +53,30 @@ export class WhatsappApiMetaController {
    * @returns
    */
   @Get('webhook')
-  verifyWebhook(
-    @Query('hub.mode') mode: string,
-    @Query('hub.verify_token') token: string,
-    @Query('hub.challenge') challenge: string,
-    @Res() res: Response,
-  ) {
+  verifyWebhook(@Query() query: any, @Res() res: Response) {
+    // Extraemos manualmente para evitar errores de parsing con los puntos
+    const mode = query['hub.mode'];
+    const token = query['hub.verify_token'];
+    const challenge = query['hub.challenge'];
+
+    this.logger.log(
+      `🔍 Intento de verificación recibido: Mode=${mode}, Token=${token}`,
+    );
+
     const VERIFY_TOKEN = this.config.get<string>('WHATSAPP_VERIFY_TOKEN');
+
     if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-      this.logger.log(' Webhook de WhatsApp verificado correctamente');
+      this.logger.log('✅ Webhook de WhatsApp verificado correctamente');
+      // Importante: Devolver el challenge tal cual, como string y status 200
       return res.status(HttpStatus.OK).send(challenge);
     }
 
     this.logger.warn(
-      ` Falló la verificación del webhook: mode=${mode}, token=${token}`,
+      `⛔ Falló la verificación: Recibido [${token}] vs Esperado [${VERIFY_TOKEN}]`,
     );
     return res.sendStatus(HttpStatus.FORBIDDEN);
   }
+
   @Post('webhook')
   async handleWebhook(@Body() body: any, @Res() res: Response) {
     this.logger.debug(`📩 Webhook recibido: ${JSON.stringify(body)}`);
