@@ -54,20 +54,21 @@ export class WhatsappApiMetaController {
    */
   @Get('webhook')
   verifyWebhook(@Query() query: any, @Res() res: Response) {
-    // Extraemos manualmente para evitar errores de parsing con los puntos
-    const mode = query['hub.mode'];
-    const token = query['hub.verify_token'];
-    const challenge = query['hub.challenge'];
+    // 1. Logueamos todo el objeto para depuración (CRÍTICO)
+    this.logger.log(`🔍 Query recibida completa: ${JSON.stringify(query)}`);
 
-    this.logger.log(
-      `🔍 Intento de verificación recibido: Mode=${mode}, Token=${token}`,
-    );
+    // 2. Extraemos soportando anidación (hub.mode) o llave plana ('hub.mode')
+    const mode = query['hub.mode'] || query?.hub?.mode;
+    const token = query['hub.verify_token'] || query?.hub?.verify_token;
+    const challenge = query['hub.challenge'] || query?.hub?.challenge;
+
+    this.logger.log(`🔍 Interpretado: Mode=${mode}, Token=${token}`);
 
     const VERIFY_TOKEN = this.config.get<string>('WHATSAPP_VERIFY_TOKEN');
 
     if (mode === 'subscribe' && token === VERIFY_TOKEN) {
       this.logger.log('✅ Webhook de WhatsApp verificado correctamente');
-      // Importante: Devolver el challenge tal cual, como string y status 200
+      // Devuelve el challenge como texto plano, es lo que Meta espera
       return res.status(HttpStatus.OK).send(challenge);
     }
 
