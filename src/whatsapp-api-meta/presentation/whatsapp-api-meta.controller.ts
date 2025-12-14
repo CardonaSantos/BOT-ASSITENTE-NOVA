@@ -21,7 +21,7 @@ import { ChatOrchestratorModule } from 'src/chat-orchestrator/chat-orchestrator.
 import { ChatChannel } from '@prisma/client';
 import { ChatOrchestratorService } from 'src/chat-orchestrator/app/chat-orchestrator.service';
 
-@Controller('whatsapp-meta-verify')
+@Controller('whatsapp-meta')
 export class WhatsappApiMetaController {
   private readonly logger = new Logger(WhatsappApiMetaController.name);
 
@@ -54,26 +54,29 @@ export class WhatsappApiMetaController {
    */
   @Get('webhook')
   verifyWebhook(@Query() query: any, @Res() res: Response) {
-    // 1. Logueamos todo el objeto para depuración (CRÍTICO)
-    this.logger.log(`🔍 Query recibida completa: ${JSON.stringify(query)}`);
+    // LOG CRÍTICO: Ver qué llega realmente (si llega algo)
+    this.logger.log('🔍 Query params recibidos:', JSON.stringify(query));
 
-    // 2. Extraemos soportando anidación (hub.mode) o llave plana ('hub.mode')
+    // 2. EL ARREGLO MÁGICO: Soportar anidación
+    // NestJS suele parsear "hub.mode" como query.hub.mode
     const mode = query['hub.mode'] || query?.hub?.mode;
     const token = query['hub.verify_token'] || query?.hub?.verify_token;
     const challenge = query['hub.challenge'] || query?.hub?.challenge;
 
-    this.logger.log(`🔍 Interpretado: Mode=${mode}, Token=${token}`);
+    this.logger.log(
+      `🔍 Interpretado: Mode=${mode}, Token=${token}, Challenge=${challenge}`,
+    );
 
     const VERIFY_TOKEN = this.config.get<string>('WHATSAPP_VERIFY_TOKEN');
 
     if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-      this.logger.log('✅ Webhook de WhatsApp verificado correctamente');
-      // Devuelve el challenge como texto plano, es lo que Meta espera
-      return res.status(HttpStatus.OK).send(challenge);
+      this.logger.log('✅ ¡VERIFICADO! Respondiendo challenge...');
+      // Meta espera el challenge plano (texto), no JSON
+      return res.status(HttpStatus.OK).send(challenge.toString());
     }
 
     this.logger.warn(
-      `⛔ Falló la verificación: Recibido [${token}] vs Esperado [${VERIFY_TOKEN}]`,
+      `⛔ Falló: Token recibido [${token}] vs Esperado [${VERIFY_TOKEN}]`,
     );
     return res.sendStatus(HttpStatus.FORBIDDEN);
   }
