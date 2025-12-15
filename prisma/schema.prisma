@@ -225,6 +225,14 @@ model KnowledgeChunk {
 /* ---------- RAG: DOCUMENTOS / CHUNKS ---------- */
 
 
+/* ---------- WHATSAPPP: PERSISTENCIA DE CHATS ---------- */
+model WhatsAppChat {
+  
+}
+
+/* ---------- WHATSAPPP: PERSISTENCIA DE CHATS ---------- */
+
+
 
 
 
