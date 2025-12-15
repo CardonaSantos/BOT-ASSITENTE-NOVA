@@ -226,9 +226,9 @@ model KnowledgeChunk {
 
 
 /* ---------- WHATSAPPP: PERSISTENCIA DE CHATS ---------- */
-model WhatsAppChat {
-  
-}
+// model WhatsAppChat {
+
+// }
 
 /* ---------- WHATSAPPP: PERSISTENCIA DE CHATS ---------- */
 
