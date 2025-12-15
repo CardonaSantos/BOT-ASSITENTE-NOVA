@@ -126,6 +126,8 @@ model Cliente {
 
   sesiones      ChatSession[]
 
+  // Historial completo de WhatsApp de este cliente
+  whatsappHistory WhatsappMessage[]
   // Un teléfono no se repite dentro de la misma empresa
   @@unique([empresaId, telefono])
 }
@@ -148,6 +150,8 @@ model ChatSession {
   telefono             String
   canal                ChatChannel
   estado               ChatSessionStatus @default(OPEN)
+
+  whatsappMessages WhatsappMessage[]
 
   // Integración con CRM: último ticket creado en esta sesión
   ultimoTicketCrmId    String?
@@ -226,14 +230,86 @@ model KnowledgeChunk {
 
 
 /* ---------- WHATSAPPP: PERSISTENCIA DE CHATS ---------- */
-// model WhatsAppChat {
+model WhatsappMessage {
+  id        String   @id @default(uuid()) // ID interno nuestro
+  
+  // 🆔 IDENTIFICADORES DE META
+  // El 'wamid' es vital para actualizar estados (doble check) y manejar respuestas
+  wamid     String   @unique 
+  
+  // 🔗 RELACIONES
+  // Opcional: Saber a qué sesión de IA perteneció este mensaje (si hubo una)
+  chatSessionId Int?
+  chatSession   ChatSession? @relation(fields: [chatSessionId], references: [id])
+  
+  // Relación con tu Cliente (fundamental para historial por contacto)
+  clienteId     Int?
+  cliente       Cliente?     @relation(fields: [clienteId], references: [id])
 
-// }
+  // 📞 DATOS DE ENVÍO
+  direction     WazDirection
+  from          String       // Número del que envía (Cliente o Bot)
+  to            String       // Número del que recibe
+  
+  // 📦 CONTENIDO
+  type          WazMediaType
+  body          String?      @db.Text // El texto del mensaje o el "Caption" de la foto
+  
+  // 🖼️ MULTIMEDIA (Aquí usas lo de DO Spaces)
+  mediaUrl      String?      // URL pública del archivo
+  mediaMimeType String?      // image/jpeg, audio/ogg
+  mediaSha256   String?      // Para evitar re-subir el mismo archivo
+  
+  // ✅ ESTADOS (Webhooks actualizan esto)
+  status        WazStatus    @default(SENT)
+  errorCode     String?      // Si status es FAILED, aquí guardas por qué
+  errorMessage  String?
+
+  // ↩️ CONTEXTO (Respuestas)
+  // Si este mensaje es respuesta a otro, guardamos el wamid del padre
+  replyToWamid  String?      
+  
+  // 📅 FECHAS
+  timestamp     BigInt       // Timestamp original de WhatsApp (Unix)
+  creadoEn      DateTime     @default(now())
+  actualizadoEn DateTime     @updatedAt
+
+  @@index([wamid])
+  @@index([clienteId])
+  @@index([status])
+}
 
 /* ---------- WHATSAPPP: PERSISTENCIA DE CHATS ---------- */
 
 
+// ENUMS
+// Dirección del mensaje: ¿Entra al servidor o Sale del servidor?
+enum WazDirection {
+  INBOUND  // Cliente -> Bot
+  OUTBOUND // Bot -> Cliente
+}
 
+// Estado de entrega (El "Check")
+enum WazStatus {
+  SENT      // Un check gris (Enviado a Meta)
+  DELIVERED // Doble check gris (Llegó al celular)
+  READ      // Doble check azul (Leído)
+  FAILED    // Error (No salió)
+}
+
+// Tipo de contenido (Para saber cómo renderizarlo en el UI)
+enum WazMediaType {
+  TEXT
+  IMAGE
+  AUDIO     // Notas de voz
+  VIDEO
+  DOCUMENT  // PDFs
+  STICKER
+  LOCATION
+  TEMPLATE  // Plantillas de marketing
+  INTERACTIVE // Botones y listas
+  UNKNOWN
+}
 
 
 
