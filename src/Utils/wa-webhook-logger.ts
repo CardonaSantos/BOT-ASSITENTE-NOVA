@@ -2,13 +2,22 @@ import { Logger } from '@nestjs/common';
 
 const MAX_LOG_CHARS = 25_000;
 
-function safePretty(obj: any, maxChars = MAX_LOG_CHARS) {
+export function safePretty(obj: any, maxChars = MAX_LOG_CHARS) {
+  // 🛡️ Guardias de seguridad: si es null o undefined, retorna texto plano
+  if (obj === undefined) return 'undefined';
+  if (obj === null) return 'null';
+  if (typeof obj === 'string') return obj;
+
   let s = '';
+
   try {
-    s = JSON.stringify(obj, null, 2);
-  } catch (e) {
-    return `[unstringifiable] ${(e as any)?.message ?? e}`;
+    const json = JSON.stringify(obj, null, 2);
+    // Si JSON.stringify retorna undefined (ej. funciones), lo forzamos a string
+    s = json || String(obj);
+  } catch (e: any) {
+    return `[unstringifiable] ${e?.message ?? e}`;
   }
+
   if (s.length <= maxChars) return s;
   return (
     s.slice(0, maxChars) + `\n... (TRUNCATED ${s.length - maxChars} chars)`
@@ -73,8 +82,13 @@ export function logWhatsAppWebhook(logger: Logger, req: any, body: any) {
 
       // Status updates (sent/delivered/read/failed)
       for (const st of statuses) {
+        // Preparamos el string de error solo si existe
+        const errorStr = st.errors
+          ? ` errors=${safePretty(st.errors, 500)}`
+          : '';
+
         logger.debug(
-          `  ✅ status: id=${st?.id} recipient=${st?.recipient_id} status=${st?.status} ts=${st?.timestamp} errors=${safePretty(st?.errors, 2000)}`,
+          `  ✅ status: id=${st?.id} recipient=${st?.recipient_id} status=${st?.status} ts=${st?.timestamp}${errorStr}`,
         );
       }
 
