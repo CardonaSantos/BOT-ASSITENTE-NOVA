@@ -107,10 +107,10 @@ export class ChatOrchestratorService {
       )
       .join('\n\n---\n\n');
 
-    this.logger.debug(
-      `[RAG] Contexto generado (${knChunks.length} chunks):\n` +
-        contextText.slice(0, 2000), // evita logs enormes
-    );
+    // this.logger.debug(
+    //   `[RAG] Contexto generado (${knChunks.length} chunks):\n` +
+    //     contextText.slice(0, 2000), // evita logs enormes
+    // );
     //  Pedir respuesta al modelo usando RAG
     const reply = await this.fireworksIa.replyWithContext({
       empresaNombre: empresa.nombre,

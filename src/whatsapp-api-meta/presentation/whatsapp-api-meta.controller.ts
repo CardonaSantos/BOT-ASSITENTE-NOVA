@@ -11,6 +11,7 @@ import {
   HttpStatus,
   Res,
   Req,
+  HttpCode,
 } from '@nestjs/common';
 import { CreateWhatsappApiMetaDto } from '../dto/create-whatsapp-api-meta.dto';
 import { UpdateWhatsappApiMetaDto } from '../dto/update-whatsapp-api-meta.dto';
@@ -84,63 +85,47 @@ export class WhatsappApiMetaController {
   }
 
   @Post('webhook')
-  async handleWebhook(
-    @Req() req: Request,
-    @Body() body: any,
-    @Res() res: Response,
-  ) {
-    // ACK rápido para que no reintente
-    res.sendStatus(HttpStatus.OK);
-    logWhatsAppWebhook(this.logger, req, body);
+  @HttpCode(200)
+  handleWebhook(@Req() req: Request, @Body() body: any) {
+    // responder rápido sin esperar nada
+    void (async () => {
+      try {
+        logWhatsAppWebhook(this.logger, req, body);
 
-    this.logger.debug(`📩 Webhook recibido: ${JSON.stringify(body)}`);
+        if (body?.object !== 'whatsapp_business_account') return;
 
-    if (body.object !== 'whatsapp_business_account') {
-      return res.sendStatus(HttpStatus.OK);
-    }
+        for (const entry of body.entry ?? []) {
+          for (const change of entry.changes ?? []) {
+            const value = change.value;
+            const messages = value?.messages;
+            if (!Array.isArray(messages) || messages.length === 0) continue;
 
-    try {
-      for (const entry of body.entry ?? []) {
-        for (const change of entry.changes ?? []) {
-          const value = change.value;
-          const messages = value?.messages;
+            const profileName = value?.contacts?.[0]?.profile?.name;
 
-          if (!messages || !Array.isArray(messages)) continue;
+            for (const message of messages) {
+              if (message.type !== 'text') continue;
 
-          // nombre que WhatsApp manda en contacts[0].profile.name (suele venir así)
-          const profileName = value?.contacts?.[0]?.profile?.name;
-
-          for (const message of messages) {
-            const from = message.from; // número del cliente
-            const type = message.type;
-
-            if (type === 'text') {
+              const from = message.from;
               const text = message.text?.body ?? '';
 
-              // 1) Orquestador: empresa + cliente + sesión + historial + reply
               const result = await this.orquestador.handleIncomingMessage({
-                empresaSlug: 'nova-sistemas', // fija o configurable
-                empresaNombreFallback: 'Nova Sistemas', // nombre legible
+                empresaSlug: 'nova-sistemas',
+                empresaNombreFallback: 'Nova Sistemas',
                 telefono: from,
                 texto: text,
                 nombreClienteWhatsApp: profileName,
                 canal: ChatChannel.WHATSAPP,
               });
 
-              // result.reply es lo que el cerebro (IA) respondió
-              const reply = result.reply;
-
-              // 2) Enviamos respuesta por WhatsApp al mismo número
-              await this.whatsappApiMetaService.sendText(from, reply);
+              await this.whatsappApiMetaService.sendText(from, result.reply);
             }
           }
         }
+      } catch (error) {
+        this.logger.error('Error procesando webhook de WhatsApp', error as any);
       }
+    })();
 
-      return res.sendStatus(HttpStatus.OK);
-    } catch (error) {
-      this.logger.error('Error manejando webhook de WhatsApp', error as any);
-      return res.sendStatus(HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+    return 'OK';
   }
 }
