@@ -13,6 +13,7 @@ import { ChatModule } from './chat/chat.module';
 import { ClienteModule } from './cliente/cliente.module';
 import { ChatOrchestratorModule } from './chat-orchestrator/chat-orchestrator.module';
 import { BotModule } from './bot/bot.module';
+import { CloudStorageDoSpacesModule } from './cloud-storage-dospaces/cloud-storage-dospaces.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { BotModule } from './bot/bot.module';
     ClienteModule,
     ChatOrchestratorModule,
     BotModule,
+    CloudStorageDoSpacesModule,
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService],

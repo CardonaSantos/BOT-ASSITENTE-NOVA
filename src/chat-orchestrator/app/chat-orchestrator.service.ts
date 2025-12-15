@@ -5,6 +5,8 @@ import { ChatService } from 'src/chat/app/chat.service';
 import { FireworksIaService } from 'src/fireworks-ia/app/fireworks-ia.service';
 import { ChatChannel, ChatRole } from '@prisma/client';
 import { KnowledgeService } from 'src/knowledge/app/knowledge.service';
+import { extname } from 'path';
+import { generarKeyWhatsapp } from 'src/Utils/enrutador-dospaces';
 
 export interface HandleIncomingMessageParams {
   empresaSlug: string;
@@ -133,4 +135,43 @@ export class ChatOrchestratorService {
       reply,
     };
   }
+}
+
+export async function procesarMediaWhatsapp(
+  msg: any,
+  ctx: {
+    empresaId: number;
+    clienteId: number;
+    sessionId: number;
+  },
+) {
+  // 1) Descargas el archivo desde Meta -> obtienes buffer + contentType + filename
+  const { buffer, contentType, filename } = await this.meta.downloadMedia(
+    msg.image.id,
+  );
+  // filename puede venir null, pero tú puedes inventarlo
+
+  // 2) Sacas extensión
+  const extension = extname(filename ?? '') || 'jpg'; // o derivarlo del contentType
+
+  // 3) Construyes el key dinámico
+  const key = generarKeyWhatsapp({
+    empresaId: ctx.empresaId,
+    clienteId: ctx.clienteId,
+    sessionId: ctx.sessionId,
+    wamid: msg.id, // message.id (wamid)
+    tipo: 'image', // 'image'|'document'|'audio'...
+    direction: 'in', // 'in' si lo recibes
+    extension,
+    timestampUnixSeconds: msg.timestamp ? Number(msg.timestamp) : undefined,
+    basePrefix: 'crm',
+  });
+
+  const uploaded = await this.cloudStorage.uploadBuffer({
+    buffer,
+    contentType,
+    key,
+  });
+
+  return uploaded.url;
 }

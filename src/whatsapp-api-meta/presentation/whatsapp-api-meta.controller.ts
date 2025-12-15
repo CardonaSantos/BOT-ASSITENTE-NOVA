@@ -10,6 +10,7 @@ import {
   Query,
   HttpStatus,
   Res,
+  Req,
 } from '@nestjs/common';
 import { CreateWhatsappApiMetaDto } from '../dto/create-whatsapp-api-meta.dto';
 import { UpdateWhatsappApiMetaDto } from '../dto/update-whatsapp-api-meta.dto';
@@ -20,6 +21,7 @@ import { FireworksIaService } from 'src/fireworks-ia/app/fireworks-ia.service';
 import { ChatOrchestratorModule } from 'src/chat-orchestrator/chat-orchestrator.module';
 import { ChatChannel } from '@prisma/client';
 import { ChatOrchestratorService } from 'src/chat-orchestrator/app/chat-orchestrator.service';
+import { logWhatsAppWebhook } from 'src/Utils/wa-webhook-logger';
 
 @Controller('whatsapp-meta')
 export class WhatsappApiMetaController {
@@ -82,7 +84,15 @@ export class WhatsappApiMetaController {
   }
 
   @Post('webhook')
-  async handleWebhook(@Body() body: any, @Res() res: Response) {
+  async handleWebhook(
+    @Req() req: Request,
+    @Body() body: any,
+    @Res() res: Response,
+  ) {
+    // ACK rápido para que no reintente
+    res.sendStatus(HttpStatus.OK);
+    logWhatsAppWebhook(this.logger, req, body);
+
     this.logger.debug(`📩 Webhook recibido: ${JSON.stringify(body)}`);
 
     if (body.object !== 'whatsapp_business_account') {

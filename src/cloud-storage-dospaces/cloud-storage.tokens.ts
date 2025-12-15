@@ -1,0 +1,3 @@
+export const DO_SPACES_CFG = 'DO_SPACES_CFG';
+export const DO_SPACES_S3 = 'DO_SPACES_S3';
+export const CLOUD_STORAGE_REPO = 'CLOUD_STORAGE_REPO';
