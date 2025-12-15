@@ -1,25 +1,24 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
-  Logger,
-  Query,
-  HttpStatus,
-  Res,
-} from '@nestjs/common';
+import { Get, Patch, Param, Delete, Query } from '@nestjs/common';
 import { CreateWhatsappApiMetaDto } from '../dto/create-whatsapp-api-meta.dto';
 import { UpdateWhatsappApiMetaDto } from '../dto/update-whatsapp-api-meta.dto';
-import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { WhatsappApiMetaService } from '../app/whatsapp-api-meta.service';
 import { FireworksIaService } from 'src/fireworks-ia/app/fireworks-ia.service';
 import { ChatOrchestratorModule } from 'src/chat-orchestrator/chat-orchestrator.module';
 import { ChatChannel } from '@prisma/client';
 import { ChatOrchestratorService } from 'src/chat-orchestrator/app/chat-orchestrator.service';
+import { logWhatsAppWebhook } from 'src/Utils/wa-webhook-logger';
+
+import {
+  Controller,
+  Post,
+  Body,
+  Req,
+  Res,
+  Logger,
+  HttpStatus,
+} from '@nestjs/common';
+import { Request, Response } from 'express';
 
 @Controller('whatsapp-meta')
 export class WhatsappApiMetaController {
@@ -82,9 +81,16 @@ export class WhatsappApiMetaController {
   }
 
   @Post('webhook')
-  async handleWebhook(@Body() body: any, @Res() res: Response) {
+  async handleWebhook(
+    @Body() body: any,
+    @Req() req: Request, // 👈 1. Inyectamos la Request para leer headers
+    @Res() res: Response,
+  ) {
     this.logger.debug(`📩 Webhook recibido: ${JSON.stringify(body)}`);
 
+    logWhatsAppWebhook(this.logger, req, body);
+
+    // Validación de seguridad básica
     if (body.object !== 'whatsapp_business_account') {
       return res.sendStatus(HttpStatus.OK);
     }
