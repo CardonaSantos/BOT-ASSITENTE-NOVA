@@ -140,15 +140,15 @@ export class KnowledgeService {
       limit,
     );
 
-    this.logger.debug(
-      `[RAG] Resultados para empresaId=${empresaId}, limit=${limit}: ${rows.length} chunks`,
-    );
+    // this.logger.debug(
+    //   `[RAG] Resultados para empresaId=${empresaId}, limit=${limit}: ${rows.length} chunks`,
+    // );
 
-    rows.forEach((row, idx) => {
-      this.logger.debug(
-        `[RAG] #${idx} docId=${row.documentId} idx=${row.indice} titulo="${row.titulo}" tipo=${row.tipo} distance=${row.distance}`,
-      );
-    });
+    // rows.forEach((row, idx) => {
+    //   this.logger.debug(
+    //     `[RAG] #${idx} docId=${row.documentId} idx=${row.indice} titulo="${row.titulo}" tipo=${row.tipo} distance=${row.distance}`,
+    //   );
+    // });
 
     return rows;
   }

@@ -166,7 +166,7 @@ export class ChatOrchestratorService {
     // STORAGE MEDIA & MESSAGE WHATSAPP
 
     let mediaUrl: string | null = null;
-    let mediaMime: string | null = null;
+    let mediaMimeType: string | null = null;
     let mediaSha256: string | null = null;
 
     if (media?.mediaId) {
@@ -174,21 +174,22 @@ export class ChatOrchestratorService {
         media.mediaId,
       );
 
-      mediaMime = meta.mime_type ?? media.mimeType ?? null;
+      mediaMimeType =
+        meta.mime_type ?? media.mimeType ?? 'application/octet-stream';
       mediaSha256 = meta.sha256 ?? null;
 
       const ext =
         media.extension ??
         extFromFilename(media.filename) ??
-        extFromMime(mediaMime) ??
+        extFromMime(mediaMimeType) ??
         'bin';
 
       const key = generarKeyWhatsapp({
-        empresaId: empresa.id,
+        empresaId: empresa.id, // ❗ no hardcodees 1
         clienteId: cliente.id,
         sessionId: session.id!,
         wamid,
-        tipo: media.kind, // 'image' | 'document' ...
+        tipo: media.kind, // ✅ aquí sí existe
         direction: params.direction, // INBOUND
         extension: ext,
         basePrefix: 'crm',
@@ -196,12 +197,12 @@ export class ChatOrchestratorService {
 
       const uploaded = await this.cloudStorageDoSpaces.uploadBuffer({
         buffer,
-        contentType: mediaMime ?? 'application/octet-stream', // ✅ NO uses media.kind
+        contentType: mediaMimeType, // ✅ NO uses media.kind
         key,
         publicRead: true,
       });
 
-      mediaUrl = uploaded.url ?? uploaded.url ?? null; // depende tu servicio
+      mediaUrl = uploaded.url ?? uploaded.url ?? null;
     }
 
     const dataToUrl = {
@@ -243,7 +244,7 @@ export class ChatOrchestratorService {
       body: texto ?? null,
 
       mediaUrl,
-      mediaMimeType: mediaMime,
+      mediaMimeType: media.mimeType,
       mediaSha256,
 
       status: WazStatus.SENT,
