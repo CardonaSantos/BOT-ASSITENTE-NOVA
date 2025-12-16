@@ -185,11 +185,11 @@ export class ChatOrchestratorService {
         'bin';
 
       const key = generarKeyWhatsapp({
-        empresaId: empresa.id, // ❗ no hardcodees 1
+        empresaId: empresa.id,
         clienteId: cliente.id,
         sessionId: session.id!,
         wamid,
-        tipo: media.kind, // ✅ aquí sí existe
+        tipo: media.kind,
         direction: params.direction, // INBOUND
         extension: ext,
         basePrefix: 'crm',
@@ -197,39 +197,13 @@ export class ChatOrchestratorService {
 
       const uploaded = await this.cloudStorageDoSpaces.uploadBuffer({
         buffer,
-        contentType: mediaMimeType, // ✅ NO uses media.kind
+        contentType: mediaMimeType,
         key,
         publicRead: true,
       });
 
       mediaUrl = uploaded.url ?? uploaded.url ?? null;
     }
-
-    const dataToUrl = {
-      empresaId: 1,
-      clienteId: cliente.id,
-      sessionId: session.id,
-      wamid: wamid,
-      tipo: media.kind,
-      direction: WazDirection.INBOUND,
-      extension: media.extension,
-      basePrefix: 'crm',
-    };
-
-    const urlDoSpaces = generarKeyWhatsapp(dataToUrl);
-    const urlMediaFromMeta = await this.metaWhatsappMedia.getMediaUrl(
-      media.mediaId,
-    );
-    const mediaDownloaded = await this.metaWhatsappMedia.downloadMediaBuffer(
-      urlMediaFromMeta.url,
-    );
-
-    const bufferDto = {
-      buffer: mediaDownloaded,
-      contentType: media.kind,
-      key: urlDoSpaces,
-      publicRead: true,
-    };
 
     await this.whatsappMessage.upsertByWamid({
       wamid,
