@@ -218,12 +218,21 @@ export class ChatOrchestratorService {
       body: texto ?? null,
 
       mediaUrl,
-      mediaMimeType: media.mimeType,
+      mediaMimeType: mediaMimeType,
       mediaSha256,
 
       status: WazStatus.SENT,
       replyToWamid: params.replyToWamid ?? null,
       timestamp: params.timestamp,
     });
+
+    return {
+      empresa,
+      cliente,
+      session,
+      userMessage,
+      botMessage,
+      reply,
+    };
   }
 }

@@ -190,7 +190,7 @@ export class WhatsappApiMetaController {
                 textoExtraido = `[${type}]`;
             }
             // Ahora le pasas el objeto enriquecido
-            await this.orquestador.handleIncomingMessage({
+            const result = await this.orquestador.handleIncomingMessage({
               empresaSlug: 'nova-sistemas',
               empresaNombreFallback: 'Nova Sistemas',
               telefono: from,
@@ -208,6 +208,8 @@ export class WhatsappApiMetaController {
               texto: textoExtraido,
               media: mediaData,
             });
+
+            await this.whatsappApiMetaService.sendText(from, result.reply);
           }
         }
       }
