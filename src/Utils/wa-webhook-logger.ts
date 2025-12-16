@@ -82,7 +82,6 @@ export function logWhatsAppWebhook(logger: Logger, req: any, body: any) {
 
       // Status updates (sent/delivered/read/failed)
       for (const st of statuses) {
-        // Preparamos el string de error solo si existe
         const errorStr = st.errors
           ? ` errors=${safePretty(st.errors, 500)}`
           : '';

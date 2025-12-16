@@ -14,7 +14,7 @@ import { ClienteModule } from './cliente/cliente.module';
 import { ChatOrchestratorModule } from './chat-orchestrator/chat-orchestrator.module';
 import { BotModule } from './bot/bot.module';
 import { CloudStorageDoSpacesModule } from './cloud-storage-dospaces/cloud-storage-dospaces.module';
-import { WhatsappChatModule } from './whatsapp/chat/chat.module';
+import { WhatsappMessageModule } from './whatsapp/chat/chat.module';
 
 @Module({
   imports: [
@@ -29,7 +29,7 @@ import { WhatsappChatModule } from './whatsapp/chat/chat.module';
     EmbeddingsModule,
     EmpresaModule,
     ChatModule,
-    WhatsappChatModule,
+    WhatsappMessageModule,
     ClienteModule,
     ChatOrchestratorModule,
     BotModule,

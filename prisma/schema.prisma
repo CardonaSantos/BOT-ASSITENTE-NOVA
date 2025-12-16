@@ -107,9 +107,6 @@ model Bot {
 }
 
 
-
-
-
 model Cliente {
   id            Int       @id @default(autoincrement())
 
@@ -231,7 +228,7 @@ model KnowledgeChunk {
 
 /* ---------- WHATSAPPP: PERSISTENCIA DE CHATS ---------- */
 model WhatsappMessage {
-  id        String   @id @default(uuid()) // ID interno nuestro
+  id        Int   @id @default(autoincrement()) // ID interno nuestro
   
   // 🆔 IDENTIFICADORES DE META
   // El 'wamid' es vital para actualizar estados (doble check) y manejar respuestas
@@ -278,7 +275,6 @@ model WhatsappMessage {
   @@index([clienteId])
   @@index([status])
 }
-
 /* ---------- WHATSAPPP: PERSISTENCIA DE CHATS ---------- */
 
 

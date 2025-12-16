@@ -1,9 +1,41 @@
 import { Module } from '@nestjs/common';
-import { ChatService } from './chat.service';
-import { ChatController } from './chat.controller';
+import { WhatsAppMessageService } from './app/whatsapp-chat.service';
+import { ChatController } from './presentation/chat.controller';
+import { PrismaService } from 'src/prisma/prisma-service/prisma-service.service';
+import { WHATSAPP_MESSAGE } from './domain/whatsapp-chat.repository';
+import { PrismaWhatsappMessage } from './infraestructure/prisma-whatsapp-chat';
+import { MetaWhatsAppMediaService } from './app/meta-media.service';
+import { HttpModule } from '@nestjs/axios';
 
 @Module({
+  imports: [
+    HttpModule, // ✅ ESTO
+  ],
+
   controllers: [ChatController],
-  providers: [ChatService],
+  providers: [
+    WhatsAppMessageService,
+    MetaWhatsAppMediaService,
+    PrismaService,
+    {
+      provide: WHATSAPP_MESSAGE,
+      useClass: PrismaWhatsappMessage,
+    },
+  ],
+  exports: [WhatsAppMessageService, MetaWhatsAppMediaService],
 })
-export class WhatsappChatModule {}
+export class WhatsappMessageModule {}
+
+// @Module({
+//   imports: [PrismaModuleModule],
+//   controllers: [ClienteController],
+//   providers: [
+//     ClienteService,
+//     {
+//       provide: CLIENTE_REPOSITORY,
+//       useClass: PrismaClienteRepository,
+//     },
+//   ],
+//   exports: [ClienteService],
+// })
+// export class ClienteModule {}

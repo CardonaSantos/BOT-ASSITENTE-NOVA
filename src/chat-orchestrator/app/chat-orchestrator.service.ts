@@ -3,29 +3,64 @@ import { EmpresaService } from 'src/empresa/app/empresa.service';
 import { ClienteService } from 'src/cliente/app/cliente.service';
 import { ChatService } from 'src/chat/app/chat.service';
 import { FireworksIaService } from 'src/fireworks-ia/app/fireworks-ia.service';
-import { ChatChannel, ChatRole } from '@prisma/client';
+import {
+  ChatChannel,
+  ChatRole,
+  WazDirection,
+  WazMediaType,
+  WazStatus,
+} from '@prisma/client';
 import { KnowledgeService } from 'src/knowledge/app/knowledge.service';
 import { extname } from 'path';
 import { generarKeyWhatsapp } from 'src/Utils/enrutador-dospaces';
+import { WhatsAppMessageService } from 'src/whatsapp/chat/app/whatsapp-chat.service';
+import { MetaWhatsAppMediaService } from 'src/whatsapp/chat/app/meta-media.service';
+import { CloudStorageService } from 'src/cloud-storage-dospaces/app/cloud-storage-dospaces.service';
+import { extFromFilename, extFromMime } from 'src/Utils/extractors';
 
-export interface HandleIncomingMessageParams {
+export interface IncomingMessageDto {
   empresaSlug: string;
   empresaNombreFallback: string;
-  telefono: string;
-  texto: string;
   canal: ChatChannel;
+
+  telefono: string;
   nombreClienteWhatsApp?: string | null;
+
+  wamid: string;
+  timestamp: bigint;
+  replyToWamid?: string | null;
+
+  direction: WazDirection;
+  to: string;
+
+  type: WazMediaType;
+  texto: string;
+
+  media?: MediaData | null;
+}
+
+export interface MediaData {
+  mediaId: string; // message.image.id / message.document.id / ...
+  kind: 'image' | 'document' | 'audio' | 'video' | 'sticker' | 'other';
+  mimeType?: string | null; // del webhook (puede venir) o lo completarás con meta.getMediaUrl()
+  filename?: string | null; // solo documentos
+  extension?: string | null; // inferida por ti
 }
 
 @Injectable()
 export class ChatOrchestratorService {
   private readonly logger = new Logger(ChatOrchestratorService.name);
   constructor(
-    private readonly empresaService: EmpresaService,
-    private readonly clienteService: ClienteService,
-    private readonly chatService: ChatService,
-    private readonly knowledgeService: KnowledgeService, // opcional, si lo usas
-    private readonly fireworksIa: FireworksIaService, // opcional, si lo usas
+    private readonly empresaService: EmpresaService, // EMPRESA DATOS -> ORQUESTADOR
+    private readonly clienteService: ClienteService, // CLIENTES -> ORQUESTADOR
+    private readonly chatService: ChatService, // SESIONES CHAT BOT -> ORQUESTADOR
+    private readonly knowledgeService: KnowledgeService, // CONOCIMIENTO RAG
+    private readonly fireworksIa: FireworksIaService, // FIREWORKS-IA CEREBRO
+
+    private readonly whatsappMessage: WhatsAppMessageService, // WHATSAPP MESSAGE SERVICE -> ORQUESTADOR DE MENSAJES
+    private readonly metaWhatsappMedia: MetaWhatsAppMediaService, // DESCARGADOR DE MEDIA
+
+    private readonly cloudStorageDoSpaces: CloudStorageService, // ALMACENAMIENTO BUCKET DO3
   ) {}
 
   /**
@@ -36,7 +71,7 @@ export class ChatOrchestratorService {
    * - Guarda mensaje del usuario
    * - Busca contexto y responde
    */
-  async handleIncomingMessage(params: HandleIncomingMessageParams) {
+  async handleIncomingMessage(params: IncomingMessageDto) {
     const {
       empresaSlug,
       empresaNombreFallback,
@@ -44,6 +79,8 @@ export class ChatOrchestratorService {
       texto,
       canal,
       nombreClienteWhatsApp,
+      wamid,
+      media,
     } = params;
 
     //  Empresa
@@ -126,52 +163,92 @@ export class ChatOrchestratorService {
       contenido: reply,
     });
 
-    return {
-      empresa,
-      cliente,
-      session,
-      userMessage,
-      botMessage,
-      reply,
+    // STORAGE MEDIA & MESSAGE WHATSAPP
+
+    let mediaUrl: string | null = null;
+    let mediaMime: string | null = null;
+    let mediaSha256: string | null = null;
+
+    if (media?.mediaId) {
+      const { buffer, meta } = await this.metaWhatsappMedia.fetchMedia(
+        media.mediaId,
+      );
+
+      mediaMime = meta.mime_type ?? media.mimeType ?? null;
+      mediaSha256 = meta.sha256 ?? null;
+
+      const ext =
+        media.extension ??
+        extFromFilename(media.filename) ??
+        extFromMime(mediaMime) ??
+        'bin';
+
+      const key = generarKeyWhatsapp({
+        empresaId: empresa.id,
+        clienteId: cliente.id,
+        sessionId: session.id!,
+        wamid,
+        tipo: media.kind, // 'image' | 'document' ...
+        direction: params.direction, // INBOUND
+        extension: ext,
+        basePrefix: 'crm',
+      });
+
+      const uploaded = await this.cloudStorageDoSpaces.uploadBuffer({
+        buffer,
+        contentType: mediaMime ?? 'application/octet-stream', // ✅ NO uses media.kind
+        key,
+        publicRead: true,
+      });
+
+      mediaUrl = uploaded.url ?? uploaded.url ?? null; // depende tu servicio
+    }
+
+    const dataToUrl = {
+      empresaId: 1,
+      clienteId: cliente.id,
+      sessionId: session.id,
+      wamid: wamid,
+      tipo: media.kind,
+      direction: WazDirection.INBOUND,
+      extension: media.extension,
+      basePrefix: 'crm',
     };
+
+    const urlDoSpaces = generarKeyWhatsapp(dataToUrl);
+    const urlMediaFromMeta = await this.metaWhatsappMedia.getMediaUrl(
+      media.mediaId,
+    );
+    const mediaDownloaded = await this.metaWhatsappMedia.downloadMediaBuffer(
+      urlMediaFromMeta.url,
+    );
+
+    const bufferDto = {
+      buffer: mediaDownloaded,
+      contentType: media.kind,
+      key: urlDoSpaces,
+      publicRead: true,
+    };
+
+    await this.whatsappMessage.upsertByWamid({
+      wamid,
+      chatSessionId: session.id!,
+      clienteId: cliente.id,
+
+      direction: params.direction,
+      from: telefono,
+      to: params.to,
+
+      type: params.type, // WazMediaType
+      body: texto ?? null,
+
+      mediaUrl,
+      mediaMimeType: mediaMime,
+      mediaSha256,
+
+      status: WazStatus.SENT,
+      replyToWamid: params.replyToWamid ?? null,
+      timestamp: params.timestamp,
+    });
   }
-}
-
-export async function procesarMediaWhatsapp(
-  msg: any,
-  ctx: {
-    empresaId: number;
-    clienteId: number;
-    sessionId: number;
-  },
-) {
-  // 1) Descargas el archivo desde Meta -> obtienes buffer + contentType + filename
-  const { buffer, contentType, filename } = await this.meta.downloadMedia(
-    msg.image.id,
-  );
-  // filename puede venir null, pero tú puedes inventarlo
-
-  // 2) Sacas extensión
-  const extension = extname(filename ?? '') || 'jpg'; // o derivarlo del contentType
-
-  // 3) Construyes el key dinámico
-  const key = generarKeyWhatsapp({
-    empresaId: ctx.empresaId,
-    clienteId: ctx.clienteId,
-    sessionId: ctx.sessionId,
-    wamid: msg.id, // message.id (wamid)
-    tipo: 'image', // 'image'|'document'|'audio'...
-    direction: 'in', // 'in' si lo recibes
-    extension,
-    timestampUnixSeconds: msg.timestamp ? Number(msg.timestamp) : undefined,
-    basePrefix: 'crm',
-  });
-
-  const uploaded = await this.cloudStorage.uploadBuffer({
-    buffer,
-    contentType,
-    key,
-  });
-
-  return uploaded.url;
 }

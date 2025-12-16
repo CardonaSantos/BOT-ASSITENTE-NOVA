@@ -6,6 +6,8 @@ import { ClienteModule } from 'src/cliente/cliente.module';
 import { ChatModule } from 'src/chat/chat.module';
 import { KnowledgeModule } from 'src/knowledge/knowledge.module';
 import { FireworksIaModule } from 'src/fireworks-ia/fireworks-ia.module';
+import { WhatsappMessageModule } from 'src/whatsapp/chat/chat.module';
+import { CloudStorageDoSpacesModule } from 'src/cloud-storage-dospaces/cloud-storage-dospaces.module';
 
 @Module({
   imports: [
@@ -14,6 +16,8 @@ import { FireworksIaModule } from 'src/fireworks-ia/fireworks-ia.module';
     ChatModule,
     KnowledgeModule,
     FireworksIaModule,
+    WhatsappMessageModule,
+    CloudStorageDoSpacesModule,
   ],
   controllers: [ChatOrchestratorController],
   providers: [ChatOrchestratorService],

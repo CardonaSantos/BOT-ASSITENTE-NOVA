@@ -5,21 +5,14 @@ import * as timezone from 'dayjs/plugin/timezone';
 import * as isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import * as isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
 import * as customParseFormat from 'dayjs/plugin/customParseFormat';
+import { WazDirection } from '@prisma/client';
+import { WaMediaType } from './mediaData.interface';
 dayjs.extend(customParseFormat);
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.extend(isSameOrBefore);
 dayjs.extend(isSameOrAfter);
 dayjs.locale('es');
-
-type WaMediaType =
-  | 'image'
-  | 'document'
-  | 'audio'
-  | 'video'
-  | 'sticker'
-  | 'other';
-type WaDirection = 'in' | 'out';
 
 function sanitizeExt(ext: string) {
   const clean = ext.replace('.', '').toLowerCase();
@@ -32,7 +25,7 @@ export function generarKeyWhatsapp(params: {
   sessionId: number;
   wamid: string; // message.id de WhatsApp
   tipo: WaMediaType;
-  direction: WaDirection;
+  direction: WazDirection;
   extension: string; // "pdf" | "jpg" | etc (sin punto o con punto)
   basePrefix?: string; // default: "crm"
   timestampUnixSeconds?: number; // si quieres usar el timestamp del mensaje
