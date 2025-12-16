@@ -25,17 +25,3 @@ import { HttpModule } from '@nestjs/axios';
   exports: [WhatsAppMessageService, MetaWhatsAppMediaService],
 })
 export class WhatsappMessageModule {}
-
-// @Module({
-//   imports: [PrismaModuleModule],
-//   controllers: [ClienteController],
-//   providers: [
-//     ClienteService,
-//     {
-//       provide: CLIENTE_REPOSITORY,
-//       useClass: PrismaClienteRepository,
-//     },
-//   ],
-//   exports: [ClienteService],
-// })
-// export class ClienteModule {}

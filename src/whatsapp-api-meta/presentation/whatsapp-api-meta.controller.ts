@@ -1,10 +1,5 @@
 import { Get, Patch, Param, Delete, Query } from '@nestjs/common';
-import { CreateWhatsappApiMetaDto } from '../dto/create-whatsapp-api-meta.dto';
-import { UpdateWhatsappApiMetaDto } from '../dto/update-whatsapp-api-meta.dto';
 import { ConfigService } from '@nestjs/config';
-import { WhatsappApiMetaService } from '../app/whatsapp-api-meta.service';
-import { FireworksIaService } from 'src/fireworks-ia/app/fireworks-ia.service';
-import { ChatOrchestratorModule } from 'src/chat-orchestrator/chat-orchestrator.module';
 import { ChatChannel, WazDirection } from '@prisma/client';
 import { ChatOrchestratorService } from 'src/chat-orchestrator/app/chat-orchestrator.service';
 import { logWhatsAppWebhook } from 'src/Utils/wa-webhook-logger';
@@ -31,8 +26,8 @@ export class WhatsappApiMetaController {
   private readonly logger = new Logger(WhatsappApiMetaController.name);
 
   constructor(
-    private readonly whatsappApiMetaService: WhatsappApiMetaService,
-    private readonly fireworksIa: FireworksIaService,
+    // private readonly whatsappApiMetaService: WhatsappApiMetaService,
+    // private readonly fireworksIa: FireworksIaService,
     private readonly config: ConfigService,
     private readonly orquestador: ChatOrchestratorService,
   ) {}
@@ -208,8 +203,6 @@ export class WhatsappApiMetaController {
               texto: textoExtraido,
               media: mediaData,
             });
-
-            await this.whatsappApiMetaService.sendText(from, result.reply);
           }
         }
       }

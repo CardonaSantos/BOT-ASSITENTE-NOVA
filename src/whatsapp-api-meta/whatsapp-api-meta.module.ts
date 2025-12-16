@@ -5,26 +5,14 @@ import { FireworksIaModule } from 'src/fireworks-ia/fireworks-ia.module';
 import { WhatsappApiMetaController } from './presentation/whatsapp-api-meta.controller';
 import { WhatsappApiMetaService } from './app/whatsapp-api-meta.service';
 import { ChatOrchestratorModule } from 'src/chat-orchestrator/chat-orchestrator.module';
+import { WhatsappApiClientModule } from './whatsapp-api-client.module';
 
 @Module({
   imports: [
-    ChatOrchestratorModule,
     ConfigModule,
-    FireworksIaModule,
-    HttpModule.registerAsync({
-      imports: [ConfigModule],
-      useFactory: (config: ConfigService) => ({
-        baseURL: `${config.get('WHATSAPP_API_BASE_URL')}/${config.get('WHATSAPP_PHONE_ID')}`,
-        headers: {
-          Authorization: `Bearer ${config.get('WHATSAPP_API_TOKEN')}`,
-          'Content-Type': 'application/json',
-        },
-      }),
-      inject: [ConfigService],
-    }),
+    ChatOrchestratorModule,
+    WhatsappApiClientModule, // ✅ para send-test si lo ocupas aquí también
   ],
   controllers: [WhatsappApiMetaController],
-  providers: [WhatsappApiMetaService],
-  exports: [WhatsappApiMetaService],
 })
 export class WhatsappApiMetaModule {}

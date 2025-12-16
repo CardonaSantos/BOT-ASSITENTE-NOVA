@@ -8,6 +8,7 @@ import { KnowledgeModule } from 'src/knowledge/knowledge.module';
 import { FireworksIaModule } from 'src/fireworks-ia/fireworks-ia.module';
 import { WhatsappMessageModule } from 'src/whatsapp/chat/chat.module';
 import { CloudStorageDoSpacesModule } from 'src/cloud-storage-dospaces/cloud-storage-dospaces.module';
+import { WhatsappApiClientModule } from 'src/whatsapp-api-meta/whatsapp-api-client.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { CloudStorageDoSpacesModule } from 'src/cloud-storage-dospaces/cloud-sto
     FireworksIaModule,
     WhatsappMessageModule,
     CloudStorageDoSpacesModule,
+    WhatsappApiClientModule, // ✅ aquí va
   ],
   controllers: [ChatOrchestratorController],
   providers: [ChatOrchestratorService],

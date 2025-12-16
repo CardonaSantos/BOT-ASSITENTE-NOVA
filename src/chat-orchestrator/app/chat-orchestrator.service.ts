@@ -17,6 +17,7 @@ import { WhatsAppMessageService } from 'src/whatsapp/chat/app/whatsapp-chat.serv
 import { MetaWhatsAppMediaService } from 'src/whatsapp/chat/app/meta-media.service';
 import { CloudStorageService } from 'src/cloud-storage-dospaces/app/cloud-storage-dospaces.service';
 import { extFromFilename, extFromMime } from 'src/Utils/extractors';
+import { WhatsappApiMetaService } from 'src/whatsapp-api-meta/app/whatsapp-api-meta.service';
 
 export interface IncomingMessageDto {
   empresaSlug: string;
@@ -61,6 +62,7 @@ export class ChatOrchestratorService {
     private readonly metaWhatsappMedia: MetaWhatsAppMediaService, // DESCARGADOR DE MEDIA
 
     private readonly cloudStorageDoSpaces: CloudStorageService, // ALMACENAMIENTO BUCKET DO3
+    private readonly whatsappApiMetaService: WhatsappApiMetaService, // ✅ NUEVO
   ) {}
 
   /**
@@ -205,6 +207,7 @@ export class ChatOrchestratorService {
       mediaUrl = uploaded.url ?? uploaded.url ?? null;
     }
 
+    // ENTRADA DEL CLIENTE
     await this.whatsappMessage.upsertByWamid({
       wamid,
       chatSessionId: session.id!,
@@ -225,6 +228,65 @@ export class ChatOrchestratorService {
       replyToWamid: params.replyToWamid ?? null,
       timestamp: params.timestamp,
     });
+
+    // SALIDA DEL BOT | USUARIO
+    let outWamid: string | null = null;
+    try {
+      const sent = await this.whatsappApiMetaService.sendText(telefono, reply);
+      outWamid = sent?.messages?.[0]?.id ?? null;
+
+      if (!outWamid) {
+        this.logger.error('Meta no devolvió wamid OUTBOUND', sent);
+      }
+
+      await this.whatsappMessage.upsertByWamid({
+        wamid: outWamid ?? `local-${crypto.randomUUID()}`,
+        chatSessionId: session.id!,
+        clienteId: cliente.id,
+
+        direction: WazDirection.OUTBOUND,
+        from: params.to,
+        to: telefono,
+
+        type: WazMediaType.TEXT,
+        body: reply,
+
+        mediaUrl: null,
+        mediaMimeType: null,
+        mediaSha256: null,
+
+        status: WazStatus.SENT,
+        replyToWamid: wamid,
+        timestamp: BigInt(Math.floor(Date.now() / 1000)),
+      });
+    } catch (err: any) {
+      this.logger.error('Fallo enviando reply a Meta', err);
+
+      await this.whatsappMessage.upsertByWamid({
+        wamid: `local-${crypto.randomUUID()}`,
+        chatSessionId: session.id!,
+        clienteId: cliente.id,
+
+        direction: WazDirection.OUTBOUND,
+        from: params.to,
+        to: telefono,
+
+        type: WazMediaType.TEXT,
+        body: reply,
+
+        mediaUrl: null,
+        mediaMimeType: null,
+        mediaSha256: null,
+
+        status: WazStatus.FAILED,
+        replyToWamid: wamid,
+        timestamp: BigInt(Math.floor(Date.now() / 1000)),
+
+        // si tu upsert permite estos campos:
+        // errorCode: 'META_SEND_FAILED',
+        // errorMessage: err?.message ?? 'unknown',
+      });
+    }
 
     return {
       empresa,
