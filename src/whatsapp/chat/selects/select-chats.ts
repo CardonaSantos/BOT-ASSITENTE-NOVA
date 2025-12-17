@@ -19,6 +19,7 @@ export const selectedWhatsappMessage = {
   type: true,
   to: true,
   wamid: true,
+  clienteId: true,
   cliente: {
     select: {
       id: true,
@@ -29,7 +30,7 @@ export const selectedWhatsappMessage = {
       uuid: true,
     },
   },
-};
+} satisfies Prisma.WhatsappMessageSelect;
 
 export type selecteWhatsappMessage = Prisma.WhatsappMessageGetPayload<{
   select: typeof selectedWhatsappMessage;

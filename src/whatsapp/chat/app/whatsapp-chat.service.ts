@@ -9,6 +9,7 @@ import { FindWhatsappMessagesQueryDto } from '../dto/find-whatsapp-messages.quer
 import { WhatsappMessage } from '../entities/chat.entity';
 import { PrismaService } from 'src/prisma/prisma-service/prisma-service.service';
 import { Prisma, WazDirection, WazMediaType, WazStatus } from '@prisma/client';
+import { SearchWhatsappMessageDto } from '../dto/query';
 
 @Injectable()
 export class WhatsAppMessageService {
@@ -51,11 +52,15 @@ export class WhatsAppMessageService {
   }
 
   async findAll(q: FindWhatsappMessagesQueryDto) {
+    const { take = 50, skip = 0 } = q; // defaults
+
     const where: Prisma.WhatsappMessageWhereInput = {};
 
     if (q.telefono) {
-      // inbound como outbound por ese número
-      where.OR = [{ from: q.telefono }, { to: q.telefono }];
+      where.OR = [
+        { from: { contains: q.telefono } },
+        { to: { contains: q.telefono } },
+      ];
     }
     if (q.clienteId) where.clienteId = q.clienteId;
     if (q.chatSessionId) where.chatSessionId = q.chatSessionId;
@@ -63,15 +68,32 @@ export class WhatsAppMessageService {
     if (q.status) where.status = q.status;
     if (q.type) where.type = q.type;
 
-    const rows = await this.prisma.whatsappMessage.findMany({
-      where,
-      select: selectedWhatsappMessage,
-      orderBy: { timestamp: 'desc' },
-      take: q.take ?? 50,
-      skip: q.skip ?? 0,
-    });
+    // Ejecutamos dos consultas en paralelo (Transacción)
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.whatsappMessage.count({ where }), // 1. Contar totales con los filtros
+      this.prisma.whatsappMessage.findMany({
+        // 2. Traer la página actual
+        where,
+        select: selectedWhatsappMessage,
+        orderBy: { timestamp: 'desc' },
+        take: take,
+        skip: skip,
+      }),
+    ]);
 
-    return rows.map((r) => this.toEnrichedResponse(r));
+    // Retornamos estructura estandarizada
+    return {
+      data: rows.map((r) => this.toEnrichedResponse(r)),
+      meta: {
+        total,
+        take,
+        skip,
+        page: Math.floor(skip / take) + 1,
+        totalPages: Math.ceil(total / take),
+        hasNextPage: skip + take < total,
+        hasPreviousPage: skip > 0,
+      },
+    };
   }
 
   async findOne(id: number) {
@@ -134,5 +156,10 @@ export class WhatsAppMessageService {
       },
     });
     return row;
+  }
+
+  // GET DE CLIENTE CON SU HISTORIAL
+  async getClienteWithHistorial(id: number, q: SearchWhatsappMessageDto) {
+    return await this.repo.findClienteWithChat(id, q);
   }
 }

@@ -1,9 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { WhatsappMessageRepository } from '../domain/whatsapp-chat.repository';
+import {
+  ChatClient,
+  WhatsappMessageRepository,
+} from '../domain/whatsapp-chat.repository';
 import { WhatsappMessage } from '../entities/chat.entity';
 import { throwFatalError } from 'src/Utils/CommonFatalError';
 import { PrismaService } from 'src/prisma/prisma-service/prisma-service.service';
 import { selectedWhatsappMessage } from '../selects/select-chats';
+import { SearchWhatsappMessageDto } from '../dto/query';
+import { Prisma } from '@prisma/client';
+import { Cliente } from 'src/cliente/entities/cliente.entity';
+import { selectedCliente } from 'src/cliente/selects/select-cliente';
 
 @Injectable()
 export class PrismaWhatsappMessage implements WhatsappMessageRepository {
@@ -92,6 +99,99 @@ export class PrismaWhatsappMessage implements WhatsappMessageRepository {
       return this.toDomain(recortToUpdate);
     } catch (error) {
       throwFatalError(error, this.logger, 'PrismaWhatsappMessage -update');
+    }
+  }
+
+  // CONSEGUIR UN SOLO CLIENTE CON SUS CHATS
+  async findClienteWithChat(
+    id: number,
+    q: SearchWhatsappMessageDto,
+  ): Promise<{
+    data: ChatClient;
+    meta: {
+      total: number;
+      take: number;
+      skip: number;
+      page: number;
+      totalPages: number;
+      hasNextPage: boolean;
+      hasPreviousPage: boolean;
+    };
+  }> {
+    try {
+      const {
+        page = 1,
+        limit = 50,
+        search,
+        startDate,
+        endDate,
+        ...filters
+      } = q;
+      const take = Number(limit);
+      const skip = (Number(page) - 1) * take;
+
+      const whereMessages: Prisma.WhatsappMessageWhereInput = {
+        clienteId: id,
+
+        ...filters,
+        ...(search
+          ? {
+              OR: [
+                { body: { contains: search, mode: 'insensitive' } },
+                { wamid: { equals: search } },
+              ],
+            }
+          : {}),
+
+        ...(startDate || endDate
+          ? {
+              creadoEn: {
+                gte: startDate,
+                lte: endDate,
+              },
+            }
+          : {}),
+      };
+
+      const [cliente, totalMessages, messages] = await this.prisma.$transaction(
+        [
+          this.prisma.cliente.findUniqueOrThrow({
+            where: { id },
+            select: selectedCliente,
+          }),
+
+          this.prisma.whatsappMessage.count({
+            where: whereMessages,
+          }),
+
+          this.prisma.whatsappMessage.findMany({
+            where: whereMessages,
+            take: take,
+            skip: skip,
+            orderBy: { creadoEn: 'asc' },
+            select: selectedWhatsappMessage,
+          }),
+        ],
+      );
+
+      return {
+        data: {
+          cliente: Cliente.fromPrisma(cliente),
+          chats: messages.map((msg) => WhatsappMessage.fromPrisma(msg)),
+        },
+
+        meta: {
+          total: totalMessages,
+          take: take,
+          skip: skip,
+          page: Number(page),
+          totalPages: Math.ceil(totalMessages / take),
+          hasNextPage: skip + take < totalMessages,
+          hasPreviousPage: skip > 0,
+        },
+      };
+    } catch (error) {
+      throwFatalError(error, this.logger, 'findClienteWithChat');
     }
   }
 }

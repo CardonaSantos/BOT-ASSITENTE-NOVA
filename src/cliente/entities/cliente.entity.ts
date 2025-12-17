@@ -1,3 +1,14 @@
+type PrismaClienteLike = {
+  id: number;
+  empresaId: number;
+  nombre: string | null;
+  telefono: string;
+  uuid: string | null;
+  crmUsuarioId: number | null;
+  creadoEn?: Date | null;
+  actualizadoEn?: Date | null;
+};
+
 export class Cliente {
   constructor(
     public readonly id: number | null,
@@ -27,6 +38,18 @@ export class Cliente {
       props.telefono,
       props.uuid ?? null,
       props.crmUsuarioId ?? null,
+    );
+  }
+
+  static fromPrisma(row: PrismaClienteLike): Cliente {
+    return new Cliente(
+      row.id,
+      row.empresaId,
+      row.nombre ?? null,
+      row.telefono,
+      row.uuid ?? null,
+      row.crmUsuarioId ?? undefined,
+      row.actualizadoEn ?? undefined,
     );
   }
 }

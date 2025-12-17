@@ -1,3 +1,4 @@
+import { FindClientesMessagesQuery } from '../dto/dto-pagination';
 import { Cliente } from '../entities/cliente.entity';
 
 // EMPRESA, ES LA ENTIDAD
@@ -17,4 +18,17 @@ export interface ClienteRepository {
     nombre?: string | null,
   ): Promise<Cliente>;
   findAllByEmpresa(empresaId: number): Promise<Cliente[]>;
+  /** Nuevo método de consulta con paginación y filtros */
+  findManyWithPagination(q: FindClientesMessagesQuery): Promise<{
+    data: Cliente[];
+    meta: {
+      total: number;
+      take: number;
+      skip: number;
+      page: number;
+      totalPages: number;
+      hasNextPage: boolean;
+      hasPreviousPage: boolean;
+    };
+  }>;
 }

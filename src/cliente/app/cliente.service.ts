@@ -6,6 +6,7 @@ import {
   ClienteRepository,
 } from '../domain/cliente.repository';
 import { Cliente } from '../entities/cliente.entity';
+import { FindClientesMessagesQuery } from '../dto/dto-pagination';
 
 @Injectable()
 export class ClienteService {
@@ -29,6 +30,25 @@ export class ClienteService {
     return this.repo.update(id, dto);
   }
 
+  async findById(id: number): Promise<Cliente> {
+    return this.repo.findById(id);
+  }
+
+  async getAllClientes(q: FindClientesMessagesQuery): Promise<{
+    data: Cliente[];
+    meta: {
+      total: number;
+      take: number;
+      skip: number;
+      page: number;
+      totalPages: number;
+      hasNextPage: boolean;
+      hasPreviousPage: boolean;
+    };
+  }> {
+    return this.repo.findManyWithPagination(q);
+  }
+
   async findByEmpresaAndTelefono(
     empresaId: number,
     telefono: string,
@@ -42,9 +62,5 @@ export class ClienteService {
     nombre?: string | null,
   ): Promise<Cliente> {
     return this.repo.upsertByEmpresaAndTelefono(empresaId, telefono, nombre);
-  }
-
-  async findAllByEmpresa(empresaId: number): Promise<Cliente[]> {
-    return this.repo.findAllByEmpresa(empresaId);
   }
 }

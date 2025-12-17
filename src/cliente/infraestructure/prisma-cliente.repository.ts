@@ -4,6 +4,15 @@ import { PrismaService } from 'src/prisma/prisma-service/prisma-service.service'
 import { ClienteRepository } from '../domain/cliente.repository';
 import { Cliente } from '../entities/cliente.entity';
 import { throwFatalError } from 'src/Utils/CommonFatalError';
+import { FindClientesMessagesQuery } from '../dto/dto-pagination';
+import { selectedCliente } from '../selects/select-cliente';
+import { Prisma } from '@prisma/client';
+const normalize = (s: string) =>
+  s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 
 @Injectable()
 export class PrismaClienteRepository implements ClienteRepository {
@@ -159,5 +168,52 @@ export class PrismaClienteRepository implements ClienteRepository {
         'Cliente - PrismaClienteRepository.findAllByEmpresa',
       );
     }
+  }
+
+  /** 🔥 Implementación limpia de la paginación */
+  async findManyWithPagination(q: FindClientesMessagesQuery) {
+    const { take = 50, skip = 0 } = q;
+
+    const where: Prisma.ClienteWhereInput = {};
+
+    if (q.telefono) {
+      const tel = normalize(q.telefono);
+      where.telefono = { contains: tel, mode: 'insensitive' };
+    }
+
+    if (q.nombre) {
+      where.nombre = { contains: q.nombre, mode: 'insensitive' };
+    }
+
+    if (q.uuid) {
+      where.uuid = { contains: q.uuid, mode: 'insensitive' };
+    }
+
+    if (q.crmUsuarioId) where.crmUsuarioId = { equals: q.crmUsuarioId };
+    if (q.creadoEn) where.creadoEn = { equals: q.creadoEn };
+
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.cliente.count({ where }),
+      this.prisma.cliente.findMany({
+        where,
+        select: selectedCliente,
+        orderBy: [{ creadoEn: 'desc' }, { id: 'desc' }],
+        take,
+        skip,
+      }),
+    ]);
+
+    return {
+      data: rows.map(Cliente.fromPrisma),
+      meta: {
+        total,
+        take,
+        skip,
+        page: Math.floor(skip / take) + 1,
+        totalPages: Math.ceil(total / take),
+        hasNextPage: skip + take < total,
+        hasPreviousPage: skip > 0,
+      },
+    };
   }
 }

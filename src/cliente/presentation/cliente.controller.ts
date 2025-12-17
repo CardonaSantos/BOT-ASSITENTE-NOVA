@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Query,
@@ -11,8 +12,9 @@ import {
 import { ClienteService } from '../app/cliente.service';
 import { CreateClienteDto } from '../dto/create-cliente.dto';
 import { UpdateClienteDto } from '../dto/update-cliente.dto';
+import { FindClientesMessagesQuery } from '../dto/dto-pagination';
 
-@Controller('clientes')
+@Controller('cliente')
 export class ClienteController {
   constructor(private readonly clienteService: ClienteService) {}
 
@@ -21,28 +23,26 @@ export class ClienteController {
     return this.clienteService.create(dto);
   }
 
-  // opcional: listar clientes de una empresa
-  @Get()
-  findAllByEmpresa(@Query('empresaId') empresaId?: string) {
-    if (!empresaId) {
-      // si quieres, aquí podrías lanzar error o devolver vacío;
-      // yo asumo que siempre lo mandas
-      return [];
-    }
+  @Get('get-all')
+  getAllClientes(@Query() q: FindClientesMessagesQuery) {
+    return this.clienteService.getAllClientes(q);
+  }
 
-    return this.clienteService.findAllByEmpresa(+empresaId);
+  @Get(':id')
+  getCliente(@Param('id', ParseIntPipe) id: number) {
+    return this.clienteService.findById(id);
   }
 
   @Get('empresa/:empresaId/telefono/:telefono')
   findByEmpresaAndTelefono(
-    @Param('empresaId') empresaId: string,
+    @Param('empresaId', ParseIntPipe) empresaId: string,
     @Param('telefono') telefono: string,
   ) {
     return this.clienteService.findByEmpresaAndTelefono(+empresaId, telefono);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateClienteDto) {
+  update(@Param('id', ParseIntPipe) id: string, @Body() dto: UpdateClienteDto) {
     return this.clienteService.update(+id, dto);
   }
 }
