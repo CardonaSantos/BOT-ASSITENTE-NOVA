@@ -8,7 +8,7 @@ import { throwFatalError } from 'src/Utils/CommonFatalError';
 import { PrismaService } from 'src/prisma/prisma-service/prisma-service.service';
 import { selectedWhatsappMessage } from '../selects/select-chats';
 import { SearchWhatsappMessageDto } from '../dto/query';
-import { Prisma } from '@prisma/client';
+import { Prisma, WazStatus } from '@prisma/client';
 import { Cliente } from 'src/cliente/entities/cliente.entity';
 import { selectedCliente } from 'src/cliente/selects/select-cliente';
 
@@ -192,6 +192,32 @@ export class PrismaWhatsappMessage implements WhatsappMessageRepository {
       };
     } catch (error) {
       throwFatalError(error, this.logger, 'findClienteWithChat');
+    }
+  }
+
+  // ACTUALIZAR ESTADO DE MENSAJE POR WAMID
+  async upsertByWamidStatus(data: {
+    wamid: string;
+    newStatus: WazStatus;
+    errorCode: string | null;
+    errorMessage: string | null;
+  }): Promise<WhatsappMessage> {
+    try {
+      const row = await this.prisma.whatsappMessage.update({
+        where: {
+          wamid: data.wamid,
+        },
+        data: {
+          status: data.newStatus,
+          errorCode: data.errorCode,
+          errorMessage: data.errorMessage,
+          actualizadoEn: new Date(),
+        },
+      });
+      return this.toDomain(row);
+    } catch (error) {
+      // Si el mensaje no existe (Race condition), esto lanzará error.
+      throwFatalError(error, this.logger, 'upsertByWamidStatus');
     }
   }
 }

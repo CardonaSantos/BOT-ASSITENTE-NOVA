@@ -89,127 +89,142 @@ export class WhatsappApiMetaController {
   ) {
     this.logger.debug(`📩 Webhook recibido: ${JSON.stringify(body)}`);
 
-    logWhatsAppWebhook(this.logger, req, body);
+    // La estructura de Meta es anidada
+    const changes = body.entry?.[0]?.changes?.[0]?.value;
 
-    // Validación de seguridad básica
-    if (body.object !== 'whatsapp_business_account') {
-      return res.sendStatus(HttpStatus.OK);
-    }
+    if (!changes) return { status: 'ignored' };
 
-    try {
-      for (const entry of body.entry ?? []) {
-        for (const change of entry.changes ?? []) {
-          const value = change.value;
-          const messages = value?.messages;
+    // CASO A MENSAJE NUEVO
+    if (changes.messages && changes.messages.length > 0) {
+      logWhatsAppWebhook(this.logger, req, body);
 
-          if (!messages || !Array.isArray(messages)) continue;
+      // Validación de seguridad básica
+      if (body.object !== 'whatsapp_business_account') {
+        return res.sendStatus(HttpStatus.OK);
+      }
 
-          // nombre que WhatsApp manda en contacts[0].profile.name (suele venir así)
-          const profileName = value?.contacts?.[0]?.profile?.name;
+      try {
+        for (const entry of body.entry ?? []) {
+          for (const change of entry.changes ?? []) {
+            const value = change.value;
+            const messages = value?.messages;
 
-          for (const message of messages) {
-            const from = message.from;
-            const type = message.type;
+            if (!messages || !Array.isArray(messages)) continue;
 
-            // Variables para unificar la extracción
-            let textoExtraido = '';
-            let mediaData: MediaData | null = null;
+            // nombre que WhatsApp manda en contacts[0].profile.name (suele venir así)
+            const profileName = value?.contacts?.[0]?.profile?.name;
 
-            const wamid = String(message.id);
-            const timestamp = BigInt(message.timestamp); // Meta manda string unix en segundos
-            const replyToWamid = message?.context?.id ?? null;
+            for (const message of messages) {
+              const from = message.from;
+              const type = message.type;
 
-            const toNumber =
-              value?.metadata?.display_phone_number ??
-              process.env.WHATSAPP_DISPLAY_NUMBER ??
-              '';
+              // Variables para unificar la extracción
+              let textoExtraido = '';
+              let mediaData: MediaData | null = null;
 
-            const direction = WazDirection.INBOUND;
-            const typeEnum = mapMetaTypeToWaz(type);
+              const wamid = String(message.id);
+              const timestamp = BigInt(message.timestamp); // Meta manda string unix en segundos
+              const replyToWamid = message?.context?.id ?? null;
 
-            // 🔍 EXTRACTOR DE DATOS
-            switch (type) {
-              case 'text':
-                textoExtraido = message.text?.body ?? '';
-                break;
+              const toNumber =
+                value?.metadata?.display_phone_number ??
+                process.env.WHATSAPP_DISPLAY_NUMBER ??
+                '';
 
-              case 'image': {
-                const mimeType = message.image?.mime_type ?? null;
-                textoExtraido = message.image?.caption ?? '[Imagen]';
+              const direction = WazDirection.INBOUND;
+              const typeEnum = mapMetaTypeToWaz(type);
 
-                mediaData = {
-                  mediaId: message.image?.id,
-                  kind: 'image',
-                  mimeType,
-                  filename: null,
-                  extension: extFromMime(mimeType),
-                  direction: direction,
-                };
-                break;
+              // 🔍 EXTRACTOR DE DATOS
+              switch (type) {
+                case 'text':
+                  textoExtraido = message.text?.body ?? '';
+                  break;
+
+                case 'image': {
+                  const mimeType = message.image?.mime_type ?? null;
+                  textoExtraido = message.image?.caption ?? '[Imagen]';
+
+                  mediaData = {
+                    mediaId: message.image?.id,
+                    kind: 'image',
+                    mimeType,
+                    filename: null,
+                    extension: extFromMime(mimeType),
+                    direction: direction,
+                  };
+                  break;
+                }
+
+                case 'document': {
+                  const mimeType = message.document?.mime_type ?? null;
+                  const filename = message.document?.filename ?? null;
+                  textoExtraido =
+                    message.document?.caption ??
+                    `[Documento${filename ? `: ${filename}` : ''}]`;
+
+                  mediaData = {
+                    mediaId: message.document?.id,
+                    kind: 'document',
+                    mimeType,
+                    filename,
+                    extension:
+                      extFromFilename(filename) ?? extFromMime(mimeType),
+                    direction: direction,
+                  };
+                  break;
+                }
+
+                case 'audio': {
+                  const mimeType = message.audio?.mime_type ?? null;
+                  textoExtraido = '[Audio]';
+
+                  mediaData = {
+                    mediaId: message.audio?.id,
+                    kind: 'audio',
+                    mimeType,
+                    filename: null,
+                    extension: extFromMime(mimeType) ?? 'ogg', // WhatsApp suele ser ogg/opus
+                    direction: direction,
+                  };
+                  break;
+                }
+
+                default:
+                  textoExtraido = `[${type}]`;
               }
+              // Ahora le pasas el objeto enriquecido
+              const result = await this.orquestador.handleIncomingMessage({
+                empresaSlug: 'nova-sistemas',
+                empresaNombreFallback: 'Nova Sistemas',
+                telefono: from,
+                nombreClienteWhatsApp: profileName,
+                canal: ChatChannel.WHATSAPP,
 
-              case 'document': {
-                const mimeType = message.document?.mime_type ?? null;
-                const filename = message.document?.filename ?? null;
-                textoExtraido =
-                  message.document?.caption ??
-                  `[Documento${filename ? `: ${filename}` : ''}]`;
+                wamid,
+                timestamp,
+                replyToWamid,
 
-                mediaData = {
-                  mediaId: message.document?.id,
-                  kind: 'document',
-                  mimeType,
-                  filename,
-                  extension: extFromFilename(filename) ?? extFromMime(mimeType),
-                  direction: direction,
-                };
-                break;
-              }
+                direction,
+                to: toNumber,
 
-              case 'audio': {
-                const mimeType = message.audio?.mime_type ?? null;
-                textoExtraido = '[Audio]';
-
-                mediaData = {
-                  mediaId: message.audio?.id,
-                  kind: 'audio',
-                  mimeType,
-                  filename: null,
-                  extension: extFromMime(mimeType) ?? 'ogg', // WhatsApp suele ser ogg/opus
-                  direction: direction,
-                };
-                break;
-              }
-
-              default:
-                textoExtraido = `[${type}]`;
+                type: typeEnum,
+                texto: textoExtraido,
+                media: mediaData,
+              });
             }
-            // Ahora le pasas el objeto enriquecido
-            const result = await this.orquestador.handleIncomingMessage({
-              empresaSlug: 'nova-sistemas',
-              empresaNombreFallback: 'Nova Sistemas',
-              telefono: from,
-              nombreClienteWhatsApp: profileName,
-              canal: ChatChannel.WHATSAPP,
-
-              wamid,
-              timestamp,
-              replyToWamid,
-
-              direction,
-              to: toNumber,
-
-              type: typeEnum,
-              texto: textoExtraido,
-              media: mediaData,
-            });
           }
         }
+        return res.sendStatus(HttpStatus.OK);
+      } catch (error) {
+        this.logger.error('Error manejando webhook de WhatsApp', error as any);
+        return res.sendStatus(HttpStatus.INTERNAL_SERVER_ERROR);
       }
-      return res.sendStatus(HttpStatus.OK);
-    } catch (error) {
-      this.logger.error('Error manejando webhook de WhatsApp', error as any);
-      return res.sendStatus(HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    // CASO B MENSAJE NUEVO
+    if (changes.statuses && changes.statuses.length > 0) {
+      const status = changes.statuses[0];
+      await this.orquestador.handleStatusUpdate(status);
     }
   }
 }

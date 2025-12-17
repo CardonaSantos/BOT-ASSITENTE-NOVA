@@ -18,6 +18,7 @@ import { MetaWhatsAppMediaService } from 'src/whatsapp/chat/app/meta-media.servi
 import { CloudStorageService } from 'src/cloud-storage-dospaces/app/cloud-storage-dospaces.service';
 import { extFromFilename, extFromMime } from 'src/Utils/extractors';
 import { WhatsappApiMetaService } from 'src/whatsapp-api-meta/app/whatsapp-api-meta.service';
+import { BroadCastMessageService } from './broadcast-message.service';
 
 export interface IncomingMessageDto {
   empresaSlug: string;
@@ -62,7 +63,9 @@ export class ChatOrchestratorService {
     private readonly metaWhatsappMedia: MetaWhatsAppMediaService, // DESCARGADOR DE MEDIA
 
     private readonly cloudStorageDoSpaces: CloudStorageService, // ALMACENAMIENTO BUCKET DO3
-    private readonly whatsappApiMetaService: WhatsappApiMetaService, // ✅ NUEVO
+    private readonly whatsappApiMetaService: WhatsappApiMetaService, // SERVICION ADICIONAL PARA EVITAR ENROLLAMIENTO DE MODULOS
+
+    private readonly broadcast: BroadCastMessageService, // SERVICION ADICIONAL PARA EVITAR ENROLLAMIENTO DE MODULOS
   ) {}
 
   /**
@@ -224,7 +227,10 @@ export class ChatOrchestratorService {
       mediaMimeType: mediaMimeType,
       mediaSha256,
 
-      status: WazStatus.SENT,
+      status:
+        params.direction === WazDirection.INBOUND
+          ? WazStatus.DELIVERED
+          : WazStatus.SENT,
       replyToWamid: params.replyToWamid ?? null,
       timestamp: params.timestamp,
     });
@@ -239,7 +245,7 @@ export class ChatOrchestratorService {
         this.logger.error('Meta no devolvió wamid OUTBOUND', sent);
       }
 
-      await this.whatsappMessage.upsertByWamid({
+      const newMessageWzt = await this.whatsappMessage.upsertByWamid({
         wamid: outWamid ?? `local-${crypto.randomUUID()}`,
         chatSessionId: session.id!,
         clienteId: cliente.id,
@@ -259,9 +265,13 @@ export class ChatOrchestratorService {
         replyToWamid: wamid,
         timestamp: BigInt(Math.floor(Date.now() / 1000)),
       });
+
+      this.broadcast.notifyCrmUI('nuvia:new-message', {
+        wamid: newMessageWzt.id,
+        status: newMessageWzt.status,
+      });
     } catch (err: any) {
       this.logger.error('Fallo enviando reply a Meta', err);
-
       await this.whatsappMessage.upsertByWamid({
         wamid: `local-${crypto.randomUUID()}`,
         chatSessionId: session.id!,
@@ -296,5 +306,72 @@ export class ChatOrchestratorService {
       botMessage,
       reply,
     };
+  }
+
+  /**
+   * Procesa la actualización de estado (Sent, Delivered, Read, Failed)
+   * que envía Meta Webhook.
+   */
+  async handleStatusUpdate(statusPayload: any) {
+    const wamid = statusPayload.id;
+    const rawStatus = statusPayload.status;
+
+    // Log para depuración
+    this.logger.debug(
+      `Actualización de estado recibida para ${wamid}: ${rawStatus}`,
+    );
+
+    let newStatus: WazStatus | null = null;
+    let errorCode: string | null = null;
+    let errorMessage: string | null = null;
+
+    // Mapear estado de string (Meta) a Enum
+    switch (rawStatus) {
+      case 'sent':
+        newStatus = WazStatus.SENT;
+        break;
+      case 'delivered':
+        newStatus = WazStatus.DELIVERED;
+        break;
+      case 'read':
+        newStatus = WazStatus.READ;
+        break;
+      case 'failed':
+        newStatus = WazStatus.FAILED;
+        // Meta suele enviar errores dentro de un array 'errors'
+        if (statusPayload.errors && statusPayload.errors.length > 0) {
+          const err = statusPayload.errors[0];
+          errorCode = String(err.code);
+          errorMessage = err.title || err.message;
+        }
+        break;
+      default:
+        this.logger.warn(`Estado desconocido recibido de Meta: ${rawStatus}`);
+        return; // No hacemos nada si no conocemos el estado
+    }
+
+    if (newStatus && wamid) {
+      try {
+        const dataUpdate = {
+          wamid,
+          newStatus,
+          errorCode,
+          errorMessage,
+        };
+        await this.whatsappMessage.upsertByWamidStatus(dataUpdate);
+        //  cambió el estado
+        this.broadcast.notifyCrmUI('nuvia:new-message', {
+          wamid: wamid,
+          status: newStatus,
+        });
+      } catch (error) {
+        // Nota: A veces el evento 'sent' llega tan rápido que la DB aún está
+        // guardando el mensaje original (Race Condition).
+        this.logger.warn(
+          `No se pudo actualizar estado ${newStatus} para ${wamid}.`,
+          error,
+        );
+      }
+    }
   }
 }

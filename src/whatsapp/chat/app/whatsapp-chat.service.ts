@@ -158,6 +158,16 @@ export class WhatsAppMessageService {
     return row;
   }
 
+  //MANEJO ESPECIAL
+  async upsertByWamidStatus(dto: {
+    wamid: string;
+    newStatus: WazStatus;
+    errorCode: string | null;
+    errorMessage: string | null;
+  }) {
+    return this.repo.upsertByWamidStatus(dto);
+  }
+
   // GET DE CLIENTE CON SU HISTORIAL
   async getClienteWithHistorial(id: number, q: SearchWhatsappMessageDto) {
     return await this.repo.findClienteWithChat(id, q);

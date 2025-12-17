@@ -2,6 +2,7 @@ import { Cliente } from 'src/cliente/entities/cliente.entity';
 import { WhatsappMessage } from '../entities/chat.entity';
 import { FindClientesMessagesQuery } from 'src/cliente/dto/dto-pagination';
 import { SearchWhatsappMessageDto } from '../dto/query';
+import { WazStatus } from '@prisma/client';
 
 export interface ChatClient {
   chats: WhatsappMessage[];
@@ -32,4 +33,12 @@ export interface WhatsappMessageRepository {
       hasPreviousPage: boolean;
     };
   }>;
+
+  //actualizar estado
+  upsertByWamidStatus(data: {
+    wamid: string;
+    newStatus: WazStatus;
+    errorCode: string | null;
+    errorMessage: string | null;
+  }): Promise<WhatsappMessage>;
 }
