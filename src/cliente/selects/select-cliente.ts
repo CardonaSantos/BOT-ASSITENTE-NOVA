@@ -10,6 +10,18 @@ export const selectedCliente = {
   uuid: true,
   crmUsuarioId: true,
   empresaId: true,
+  botActivo: true,
+  _count: {
+    select: {
+      whatsappHistory: {
+        where: {
+          status: {
+            not: 'READ',
+          },
+        },
+      },
+    },
+  },
 } satisfies Prisma.ClienteSelect;
 
 export type selecteCliente = Prisma.ClienteGetPayload<{

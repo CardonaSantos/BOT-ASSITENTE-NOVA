@@ -120,6 +120,8 @@ model Cliente {
 
   creadoEn      DateTime  @default(now())
   actualizadoEn DateTime  @updatedAt
+  
+  botActivo     Boolean   @default(true) 
 
   sesiones      ChatSession[]
 

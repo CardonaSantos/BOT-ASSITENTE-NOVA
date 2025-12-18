@@ -10,9 +10,13 @@ import { WhatsappMessageModule } from 'src/whatsapp/chat/chat.module';
 import { CloudStorageDoSpacesModule } from 'src/cloud-storage-dospaces/cloud-storage-dospaces.module';
 import { WhatsappApiClientModule } from 'src/whatsapp-api-meta/whatsapp-api-client.module';
 import { BroadCastMessageService } from './app/broadcast-message.service';
+import { AgentChatController } from './presentation/agent-chat.controller';
+import { PrismaModuleModule } from 'src/prisma/prisma-module/prisma-module.module';
+import { SendHumanTextService } from './app/send-human-text.service';
 
 @Module({
   imports: [
+    PrismaModuleModule,
     EmpresaModule,
     ClienteModule,
     ChatModule,
@@ -20,10 +24,14 @@ import { BroadCastMessageService } from './app/broadcast-message.service';
     FireworksIaModule,
     WhatsappMessageModule,
     CloudStorageDoSpacesModule,
-    WhatsappApiClientModule, // ✅ aquí va
+    WhatsappApiClientModule,
   ],
-  controllers: [ChatOrchestratorController],
-  providers: [ChatOrchestratorService, BroadCastMessageService],
+  controllers: [ChatOrchestratorController, AgentChatController],
+  providers: [
+    ChatOrchestratorService,
+    BroadCastMessageService,
+    SendHumanTextService,
+  ],
   exports: [ChatOrchestratorService],
 })
 export class ChatOrchestratorModule {}

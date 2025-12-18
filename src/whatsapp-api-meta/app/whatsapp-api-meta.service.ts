@@ -3,6 +3,7 @@ import { CreateWhatsappApiMetaDto } from '../dto/create-whatsapp-api-meta.dto';
 import { UpdateWhatsappApiMetaDto } from '../dto/update-whatsapp-api-meta.dto';
 import { HttpService } from '@nestjs/axios';
 import { throwFatalError } from 'src/Utils/CommonFatalError';
+import { WazMediaType } from '@prisma/client';
 type MetaSendMessageResponse = {
   messaging_product: 'whatsapp';
   contacts?: { input: string; wa_id: string }[];
@@ -29,6 +30,47 @@ export class WhatsappApiMetaService {
       return response.data as MetaSendMessageResponse; //  aquí viene messages[0].id
     } catch (error) {
       throwFatalError(error, this.logger, 'WhatsappApiMetaService -sendText');
+    }
+  }
+
+  async sendMedia(
+    to: string,
+    type: string,
+    url: string,
+    caption?: string,
+    filename?: string,
+  ): Promise<any> {
+    try {
+      const body: any = {
+        messaging_product: 'whatsapp',
+        to,
+        type: type,
+        [type]: {
+          link: url,
+        },
+      };
+
+      if (
+        caption &&
+        (type === 'image' || type === 'document' || type === 'video')
+      ) {
+        body[type].caption = caption;
+      }
+
+      if (type === 'document' && filename) {
+        body[type].filename = filename;
+      }
+
+      // Usamos el mismo this.http que usa sendText
+      const response = await this.http.axiosRef.post('/messages', body);
+
+      this.logger.log(
+        `Media (${type}) enviado a ${to}. Status: ${response.status}`,
+      );
+      return response.data;
+    } catch (error) {
+      this.logger.error('Error enviando media a Meta', error);
+      throw error; // O usa tu throwFatalError
     }
   }
 }

@@ -19,6 +19,20 @@ import { CloudStorageService } from 'src/cloud-storage-dospaces/app/cloud-storag
 import { extFromFilename, extFromMime } from 'src/Utils/extractors';
 import { WhatsappApiMetaService } from 'src/whatsapp-api-meta/app/whatsapp-api-meta.service';
 import { BroadCastMessageService } from './broadcast-message.service';
+import * as dayjs from 'dayjs';
+import 'dayjs/locale/es';
+import * as utc from 'dayjs/plugin/utc';
+import * as timezone from 'dayjs/plugin/timezone';
+import * as isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
+import * as isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
+import * as customParseFormat from 'dayjs/plugin/customParseFormat';
+import { TZGT } from 'src/Utils/TZGT';
+dayjs.extend(customParseFormat);
+dayjs.extend(utc);
+dayjs.extend(timezone);
+dayjs.extend(isSameOrBefore);
+dayjs.extend(isSameOrAfter);
+dayjs.locale('es');
 
 export interface IncomingMessageDto {
   empresaSlug: string;
@@ -113,6 +127,9 @@ export class ChatOrchestratorService {
       } as any);
     }
 
+    const isDesactivated = !cliente.botActivo;
+
+    // PREPARAR TODO
     //  Sesión
     const session = await this.chatService.ensureOpenSession({
       empresaId: empresa.id,
@@ -121,55 +138,14 @@ export class ChatOrchestratorService {
       canal,
     });
 
-    //  Guardar mensaje del usuario
+    //  Guardar mensaje del usuario (INBOUND)
     const userMessage = await this.chatService.addMessage({
       sessionId: session.id!,
       rol: ChatRole.USER,
       contenido: texto,
     });
 
-    //  Historial
-    const history = await this.chatService.getLastMessages(session.id!);
-
-    const historyText = history
-      .map((m) =>
-        m.rol === ChatRole.USER
-          ? `Usuario: ${m.contenido}`
-          : `Bot: ${m.contenido}`,
-      )
-      .join('\n');
-
-    //Buscar contexto en base de conocimiento
-    const knChunks = await this.knowledgeService.search(empresa.id, texto, 7);
-
-    const contextText = knChunks
-      .map(
-        (c, idx) =>
-          `#${idx + 1} [distance=${c.distance?.toFixed(4) ?? 'N/A'}] (${c.tipo}) ${c.titulo}:\n${c.texto}`,
-      )
-      .join('\n\n---\n\n');
-
-    // this.logger.debug(
-    //   `[RAG] Contexto generado (${knChunks.length} chunks):\n` +
-    //     contextText.slice(0, 2000), // evita logs enormes
-    // );
-    //  Pedir respuesta al modelo usando RAG
-    const reply = await this.fireworksIa.replyWithContext({
-      empresaNombre: empresa.nombre,
-      context: contextText,
-      historyText,
-      question: texto,
-    });
-
-    // Guardar respuesta del bot
-    const botMessage = await this.chatService.addMessage({
-      sessionId: session.id!,
-      rol: ChatRole.ASSISTANT,
-      contenido: reply,
-    });
-
     // STORAGE MEDIA & MESSAGE WHATSAPP
-
     let mediaUrl: string | null = null;
     let mediaMimeType: string | null = null;
     let mediaSha256: string | null = null;
@@ -211,7 +187,7 @@ export class ChatOrchestratorService {
     }
 
     // ENTRADA DEL CLIENTE
-    await this.whatsappMessage.upsertByWamid({
+    const isboundMsg = await this.whatsappMessage.upsertByWamid({
       wamid,
       chatSessionId: session.id!,
       clienteId: cliente.id,
@@ -235,41 +211,87 @@ export class ChatOrchestratorService {
       timestamp: params.timestamp,
     });
 
+    this.broadcast.notifyCrmUI('nuvia:new-message', {
+      wamid: isboundMsg.id,
+      status: isboundMsg.status,
+    });
+
+    // PREPARAR TODO
+
+    if (isDesactivated) {
+      this.logger.log(
+        `Bot desactivado para ${telefono}. Mensaje guardado, pero sin respuesta automática.`,
+      );
+      return { status: 'saved_silent', userMessage };
+    }
+
+    // PREPARACION DE RESPONSE DEL MODELO
+
+    //  Historial
+    const history = await this.chatService.getLastMessages(session.id!);
+    // SEPARAR Y DIFERENCIAR ENTRE MENSAJE DEL USUARIO Y BOT
+    const historyText = history
+      .map((m) =>
+        m.rol === ChatRole.USER
+          ? `Usuario: ${m.contenido}`
+          : `Bot: ${m.contenido}`,
+      )
+      .join('\n');
+
+    //Buscar contexto en base de conocimiento
+    const knChunks = await this.knowledgeService.search(empresa.id, texto, 7);
+
+    const contextText = knChunks
+      .map(
+        (c, idx) =>
+          `#${idx + 1} [distance=${c.distance?.toFixed(4) ?? 'N/A'}] (${c.tipo}) ${c.titulo}:\n${c.texto}`,
+      )
+      .join('\n\n---\n\n');
+
+    //  Pedir respuesta al modelo usando RAG
+    const reply = await this.fireworksIa.replyWithContext({
+      empresaNombre: empresa.nombre,
+      context: contextText,
+      historyText,
+      question: texto,
+    });
+
     // SALIDA DEL BOT | USUARIO
-    let outWamid: string | null = null;
+
+    const botMessage = await this.chatService.addMessage({
+      sessionId: session.id!,
+      rol: ChatRole.ASSISTANT,
+      contenido: reply,
+    });
+
     try {
       const sent = await this.whatsappApiMetaService.sendText(telefono, reply);
-      outWamid = sent?.messages?.[0]?.id ?? null;
+      const outWamid = sent?.messages?.[0]?.id ?? null;
 
-      if (!outWamid) {
-        this.logger.error('Meta no devolvió wamid OUTBOUND', sent);
-      }
-
-      const newMessageWzt = await this.whatsappMessage.upsertByWamid({
+      const outMsg = await this.whatsappMessage.upsertByWamid({
         wamid: outWamid ?? `local-${crypto.randomUUID()}`,
         chatSessionId: session.id!,
         clienteId: cliente.id,
-
         direction: WazDirection.OUTBOUND,
         from: params.to,
         to: telefono,
-
         type: WazMediaType.TEXT,
         body: reply,
-
+        status: WazStatus.SENT,
+        timestamp: BigInt(dayjs().tz(TZGT).unix()),
+        replyToWamid: wamid,
         mediaUrl: null,
         mediaMimeType: null,
         mediaSha256: null,
-
-        status: WazStatus.SENT,
-        replyToWamid: wamid,
-        timestamp: BigInt(Math.floor(Date.now() / 1000)),
       });
 
+      // NOTIFICAR UI
       this.broadcast.notifyCrmUI('nuvia:new-message', {
-        wamid: newMessageWzt.id,
-        status: newMessageWzt.status,
+        wamid: outMsg.id,
+        status: outMsg.status,
       });
+
+      return { status: 'replied', userMessage, botMessage, reply };
     } catch (err: any) {
       this.logger.error('Fallo enviando reply a Meta', err);
       await this.whatsappMessage.upsertByWamid({
@@ -296,16 +318,9 @@ export class ChatOrchestratorService {
         // errorCode: 'META_SEND_FAILED',
         // errorMessage: err?.message ?? 'unknown',
       });
-    }
 
-    return {
-      empresa,
-      cliente,
-      session,
-      userMessage,
-      botMessage,
-      reply,
-    };
+      return { status: 'replied', userMessage, botMessage, reply };
+    }
   }
 
   /**

@@ -148,4 +148,21 @@ export class PrismaChatSessionRepository implements ChatSessionRepository {
       );
     }
   }
+
+  async findLastSession(clienteId: number): Promise<ChatSession | null> {
+    try {
+      const row = await this.prisma.chatSession.findFirst({
+        where: {
+          clienteId: clienteId,
+        },
+        orderBy: {
+          creadoEn: 'desc',
+        },
+      });
+
+      return row ? this.toDomain(row) : null;
+    } catch (error) {
+      throwFatalError(error, this.logger, 'Chat - findLastSession');
+    }
+  }
 }

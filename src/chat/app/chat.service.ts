@@ -1,5 +1,5 @@
 // src/chat/app/chat.service.ts
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ChatChannel, ChatRole } from '@prisma/client';
 import {
   CHAT_SESSION_REPOSITORY,
@@ -14,6 +14,7 @@ import { ChatSession } from '../entities/chat.entity';
 
 @Injectable()
 export class ChatService {
+  private readonly logger = new Logger(ChatService.name);
   constructor(
     @Inject(CHAT_SESSION_REPOSITORY)
     private readonly sessionRepo: ChatSessionRepository,
@@ -93,5 +94,9 @@ export class ChatService {
 
   async getLastMessages(sessionId: number): Promise<ChatMessage[]> {
     return this.messageRepo.findLastBySession(sessionId);
+  }
+
+  async findLastSession(clienteId: number): Promise<ChatSession> {
+    return this.sessionRepo.findLastSession(clienteId);
   }
 }

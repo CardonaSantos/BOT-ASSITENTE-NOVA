@@ -168,7 +168,7 @@ export class PrismaWhatsappMessage implements WhatsappMessageRepository {
             where: whereMessages,
             take: take,
             skip: skip,
-            orderBy: { creadoEn: 'asc' },
+            orderBy: { creadoEn: 'desc' },
             select: selectedWhatsappMessage,
           }),
         ],
