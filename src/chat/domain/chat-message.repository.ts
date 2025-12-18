@@ -7,4 +7,6 @@ export interface ChatMessageRepository {
   create(message: ChatMessage): Promise<ChatMessage>;
   findBySession(sessionId: number): Promise<ChatMessage[]>;
   findLastBySession(sessionId: number): Promise<ChatMessage[]>;
+
+  markChatAsRead(clienteId: number): void;
 }

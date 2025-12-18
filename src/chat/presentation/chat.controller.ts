@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Query,
@@ -38,6 +39,12 @@ export class ChatController {
       telefono: dto.telefono,
       canal: dto.canal,
     });
+  }
+
+  // Marcar todo chat como visto
+  @Patch('/:id/mark-as-read')
+  markChatAsRead(@Param('id', ParseIntPipe) id: number) {
+    return this.chatService.markChatAsRead(id);
   }
 
   // Cerrar sesión

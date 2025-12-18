@@ -91,4 +91,22 @@ export class PrismaChatMessageRepository implements ChatMessageRepository {
       );
     }
   }
+
+  async markChatAsRead(clienteId: number) {
+    // Una sola consulta atómica. Rápida y eficiente.
+    const result = await this.prisma.whatsappMessage.updateMany({
+      where: {
+        clienteId: clienteId,
+        direction: 'INBOUND',
+        status: {
+          not: 'READ',
+        },
+      },
+      data: {
+        status: 'READ',
+      },
+    });
+
+    return result;
+  }
 }

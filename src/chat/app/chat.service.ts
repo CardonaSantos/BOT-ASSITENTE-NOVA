@@ -99,4 +99,8 @@ export class ChatService {
   async findLastSession(clienteId: number): Promise<ChatSession> {
     return this.sessionRepo.findLastSession(clienteId);
   }
+
+  async markChatAsRead(clienteId: number) {
+    return this.messageRepo.markChatAsRead(clienteId);
+  }
 }
