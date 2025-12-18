@@ -36,14 +36,27 @@ export class SendHumanTextService {
     text: string,
     file?: Express.Multer.File,
   ) {
-    // 1. OBTENER DATOS (Empresa, Cliente, Sesión)
-    // Necesitamos esto ANTES de subir el archivo para generar la ruta correcta
     const cliente = await this.clienteService.findById(clienteId);
     if (!cliente) throw new NotFoundException('Cliente no encontrado');
 
-    const session = await this.chatService.findLastSession(cliente.id);
-    const sessionId = session?.id ?? 0; // Fallback si no hay sesión (raro en este punto)
+    // 2. GESTIONAR SESIÓN (CORRECCIÓN AQUÍ)
+    let session = await this.chatService.findLastSession(cliente.id);
 
+    // SI NO HAY SESIÓN, LA CREAMOS
+    if (!session) {
+      this.logger.log(
+        `No hay sesión previa para cliente ${clienteId}, creando una nueva...`,
+      );
+      // Asegúrate de tener un método createSession o similar en tu ChatService
+      session = await this.chatService.createSession({
+        clienteId: cliente.id,
+        empresaId: 1,
+        canal: 'WHATSAPP',
+        telefono: cliente.telefono,
+      });
+    }
+
+    const sessionId = session.id; // Ahora SIEMPRE tendrás un ID válido real
     // Apagar bot si es necesario
     if (cliente.botActivo) {
       await this.prisma.cliente.update({
