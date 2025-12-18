@@ -15,6 +15,7 @@ export const selectedCliente = {
     select: {
       whatsappHistory: {
         where: {
+          direction: 'INBOUND',
           status: {
             not: 'READ',
           },
