@@ -81,7 +81,7 @@ export class KnowledgeService {
     // De momento solo actualizamos metadatos y descripción.
     const partial: Partial<Knowledge> = {
       titulo: dto.titulo,
-      descripcion: dto.textoLargo ?? dto.descripcion,
+      descripcion: dto.descripcion ?? dto.descripcion,
       tipo: dto.tipo,
       origen: dto.origen,
       textoLargo: dto.textoLargo,

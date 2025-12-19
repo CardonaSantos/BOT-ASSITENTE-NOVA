@@ -9,4 +9,6 @@ export interface ChatMessageRepository {
   findLastBySession(sessionId: number): Promise<ChatMessage[]>;
 
   markChatAsRead(clienteId: number): void;
+
+  removeAllMessages(clienteId: number): Promise<void>;
 }

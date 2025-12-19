@@ -103,4 +103,8 @@ export class ChatService {
   async markChatAsRead(clienteId: number) {
     return this.messageRepo.markChatAsRead(clienteId);
   }
+
+  async removeChatsAndSesions(clienteId: number) {
+    return await this.removeChatsAndSesions(clienteId);
+  }
 }

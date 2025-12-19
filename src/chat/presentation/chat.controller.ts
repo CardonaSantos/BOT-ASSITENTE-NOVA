@@ -2,6 +2,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
@@ -47,6 +48,11 @@ export class ChatController {
     return this.chatService.markChatAsRead(id);
   }
 
+  @Patch('/:id/mark-as-read')
+  removeAllClienteMessagesAndSession(@Param('id', ParseIntPipe) id: number) {
+    return this.chatService.markChatAsRead(id);
+  }
+
   // Cerrar sesión
   @Patch('sessions/:id/close')
   closeSession(@Param('id') id: string) {
@@ -78,5 +84,10 @@ export class ChatController {
       return this.chatService.getLastMessages(+id);
     }
     return this.chatService.getMessages(+id);
+  }
+
+  @Delete('remove-chat/:id')
+  removeChatsSessions(@Param('id', ParseIntPipe) id: number) {
+    return this.chatService.getMessages(id);
   }
 }

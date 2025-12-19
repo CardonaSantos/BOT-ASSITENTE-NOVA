@@ -109,4 +109,28 @@ export class PrismaChatMessageRepository implements ChatMessageRepository {
 
     return result;
   }
+
+  async removeAllMessages(clienteId: number): Promise<void> {
+    try {
+      const rows = await this.prisma.whatsappMessage.deleteMany({
+        where: {
+          id: clienteId,
+        },
+      });
+
+      const rowsSesion = await this.prisma.chatSession.deleteMany({
+        where: {
+          id: clienteId,
+        },
+      });
+
+      return;
+    } catch (error) {
+      throwFatalError(
+        error,
+        this.logger,
+        'Chat - PrismaChatMessageRepository.findLastBySession',
+      );
+    }
+  }
 }
