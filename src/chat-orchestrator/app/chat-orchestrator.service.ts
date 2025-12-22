@@ -372,10 +372,3 @@ export class ChatOrchestratorService {
     }
   }
 }
-function sanitizeWhatsAppText(text: string): string {
-  if (!text) return '✅ Ticket creado correctamente.';
-  return text
-    .replace(/\u0000/g, '')
-    .trim()
-    .slice(0, 4000); // WhatsApp safe
-}

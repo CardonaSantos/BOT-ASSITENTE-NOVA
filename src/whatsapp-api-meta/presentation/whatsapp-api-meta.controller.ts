@@ -82,17 +82,12 @@ export class WhatsappApiMetaController {
   }
 
   @Post('webhook')
-  async handleWebhook(
-    @Body() body: any,
-    @Req() req: Request,
-    @Res() res: Response,
-  ) {
+  async handleWebhook(@Body() body: any, @Req() req: Request) {
     try {
-      this.logger.debug(`📩 Webhook recibido`);
+      this.logger.debug('📩 Webhook recibido');
 
-      // Validación básica de Meta
       if (body.object !== 'whatsapp_business_account') {
-        return res.sendStatus(HttpStatus.OK);
+        return;
       }
 
       const entryList = body.entry ?? [];
@@ -128,9 +123,6 @@ export class WhatsappApiMetaController {
             '';
 
           for (const message of messages) {
-            const from = message.from;
-            const type = message.type;
-
             let textoExtraido = '';
             let mediaData: MediaData | null = null;
 
@@ -139,12 +131,9 @@ export class WhatsappApiMetaController {
             const replyToWamid = message?.context?.id ?? null;
 
             const direction = WazDirection.INBOUND;
-            const typeEnum = mapMetaTypeToWaz(type);
+            const typeEnum = mapMetaTypeToWaz(message.type);
 
-            // ===============================
-            // 🔍 EXTRACCIÓN DE CONTENIDO
-            // ===============================
-            switch (type) {
+            switch (message.type) {
               case 'text':
                 textoExtraido = message.text?.body ?? '';
                 break;
@@ -152,7 +141,6 @@ export class WhatsappApiMetaController {
               case 'image': {
                 const mimeType = message.image?.mime_type ?? null;
                 textoExtraido = message.image?.caption ?? '[Imagen]';
-
                 mediaData = {
                   mediaId: message.image?.id,
                   kind: 'image',
@@ -185,7 +173,6 @@ export class WhatsappApiMetaController {
               case 'audio': {
                 const mimeType = message.audio?.mime_type ?? null;
                 textoExtraido = '[Audio]';
-
                 mediaData = {
                   mediaId: message.audio?.id,
                   kind: 'audio',
@@ -198,16 +185,13 @@ export class WhatsappApiMetaController {
               }
 
               default:
-                textoExtraido = `[${type}]`;
+                textoExtraido = `[${message.type}]`;
             }
 
-            // ===============================
-            // 🚀 DELEGAR AL ORQUESTADOR
-            // ===============================
             await this.orquestador.handleIncomingMessage({
               empresaSlug: 'nova-sistemas',
               empresaNombreFallback: 'Nova Sistemas',
-              telefono: from,
+              telefono: message.from,
               nombreClienteWhatsApp: profileName,
               canal: ChatChannel.WHATSAPP,
 
@@ -227,8 +211,6 @@ export class WhatsappApiMetaController {
       }
     } catch (error) {
       this.logger.error('Error en webhook WhatsApp', error);
-    } finally {
-      return res.sendStatus(HttpStatus.OK);
     }
   }
 }
