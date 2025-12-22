@@ -118,7 +118,7 @@ export class SendHumanTextService {
       outWamid = sent?.messages?.[0]?.id;
     } else {
       // 3. ENVIAR SOLO TEXTO
-      const sent = await this.whatsappApi.sendText(cliente.telefono, text);
+      const sent = await this.whatsappApi.sendHumanText(cliente.telefono, text);
       outWamid = sent?.messages?.[0]?.id;
     }
 
