@@ -84,158 +84,151 @@ export class WhatsappApiMetaController {
   @Post('webhook')
   async handleWebhook(
     @Body() body: any,
-    @Req() req: Request, // 👈 1. Inyectamos la Request para leer headers
+    @Req() req: Request,
     @Res() res: Response,
   ) {
-    this.logger.debug(`📩 Webhook recibido: ${JSON.stringify(body)}`);
+    try {
+      this.logger.debug(`📩 Webhook recibido`);
 
-    // La estructura de Meta es anidada
-    const changes = body.entry?.[0]?.changes?.[0]?.value;
-
-    if (!changes) return { status: 'ignored' };
-
-    // NO sea mensaje entrante
-    const hasInboundMessage =
-      Array.isArray(changes.messages) &&
-      changes.messages.length > 0 &&
-      changes.messages[0].from;
-
-    if (!hasInboundMessage) {
-      return res.sendStatus(HttpStatus.OK);
-    }
-
-    // CASO A MENSAJE NUEVO
-    if (changes.messages && changes.messages.length > 0) {
-      logWhatsAppWebhook(this.logger, req, body);
-
-      // Validación de seguridad básica
+      // Validación básica de Meta
       if (body.object !== 'whatsapp_business_account') {
         return res.sendStatus(HttpStatus.OK);
       }
 
-      try {
-        for (const entry of body.entry ?? []) {
-          for (const change of entry.changes ?? []) {
-            const value = change.value;
-            const messages = value?.messages;
+      const entryList = body.entry ?? [];
 
-            if (!messages || !Array.isArray(messages)) continue;
+      for (const entry of entryList) {
+        for (const change of entry.changes ?? []) {
+          const value = change.value;
 
-            // nombre que WhatsApp manda en contacts[0].profile.name (suele venir así)
-            const profileName = value?.contacts?.[0]?.profile?.name;
-
-            for (const message of messages) {
-              const from = message.from;
-              const type = message.type;
-
-              // Variables para unificar la extracción
-              let textoExtraido = '';
-              let mediaData: MediaData | null = null;
-
-              const wamid = String(message.id);
-              const timestamp = BigInt(message.timestamp); // Meta manda string unix en segundos
-              const replyToWamid = message?.context?.id ?? null;
-
-              const toNumber =
-                value?.metadata?.display_phone_number ??
-                process.env.WHATSAPP_DISPLAY_NUMBER ??
-                '';
-
-              const direction = WazDirection.INBOUND;
-              const typeEnum = mapMetaTypeToWaz(type);
-
-              // 🔍 EXTRACTOR DE DATOS
-              switch (type) {
-                case 'text':
-                  textoExtraido = message.text?.body ?? '';
-                  break;
-
-                case 'image': {
-                  const mimeType = message.image?.mime_type ?? null;
-                  textoExtraido = message.image?.caption ?? '[Imagen]';
-
-                  mediaData = {
-                    mediaId: message.image?.id,
-                    kind: 'image',
-                    mimeType,
-                    filename: null,
-                    extension: extFromMime(mimeType),
-                    direction: direction,
-                  };
-                  break;
-                }
-
-                case 'document': {
-                  const mimeType = message.document?.mime_type ?? null;
-                  const filename = message.document?.filename ?? null;
-                  textoExtraido =
-                    message.document?.caption ??
-                    `[Documento${filename ? `: ${filename}` : ''}]`;
-
-                  mediaData = {
-                    mediaId: message.document?.id,
-                    kind: 'document',
-                    mimeType,
-                    filename,
-                    extension:
-                      extFromFilename(filename) ?? extFromMime(mimeType),
-                    direction: direction,
-                  };
-                  break;
-                }
-
-                case 'audio': {
-                  const mimeType = message.audio?.mime_type ?? null;
-                  textoExtraido = '[Audio]';
-
-                  mediaData = {
-                    mediaId: message.audio?.id,
-                    kind: 'audio',
-                    mimeType,
-                    filename: null,
-                    extension: extFromMime(mimeType) ?? 'ogg', // WhatsApp suele ser ogg/opus
-                    direction: direction,
-                  };
-                  break;
-                }
-
-                default:
-                  textoExtraido = `[${type}]`;
-              }
-              // Ahora le pasas el objeto enriquecido
-              const result = await this.orquestador.handleIncomingMessage({
-                empresaSlug: 'nova-sistemas',
-                empresaNombreFallback: 'Nova Sistemas',
-                telefono: from,
-                nombreClienteWhatsApp: profileName,
-                canal: ChatChannel.WHATSAPP,
-
-                wamid,
-                timestamp,
-                replyToWamid,
-
-                direction,
-                to: toNumber,
-
-                type: typeEnum,
-                texto: textoExtraido,
-                media: mediaData,
-              });
+          // ===============================
+          // 🟢 CASO 1: STATUS UPDATE
+          // ===============================
+          if (Array.isArray(value?.statuses)) {
+            for (const status of value.statuses) {
+              await this.orquestador.handleStatusUpdate(status);
             }
+            continue;
+          }
+
+          // ===============================
+          // 🟢 CASO 2: MENSAJES ENTRANTES
+          // ===============================
+          const messages = value?.messages;
+          if (!Array.isArray(messages) || messages.length === 0) {
+            continue;
+          }
+
+          logWhatsAppWebhook(this.logger, req, body);
+
+          const profileName = value?.contacts?.[0]?.profile?.name;
+          const toNumber =
+            value?.metadata?.display_phone_number ??
+            process.env.WHATSAPP_DISPLAY_NUMBER ??
+            '';
+
+          for (const message of messages) {
+            const from = message.from;
+            const type = message.type;
+
+            let textoExtraido = '';
+            let mediaData: MediaData | null = null;
+
+            const wamid = String(message.id);
+            const timestamp = BigInt(message.timestamp);
+            const replyToWamid = message?.context?.id ?? null;
+
+            const direction = WazDirection.INBOUND;
+            const typeEnum = mapMetaTypeToWaz(type);
+
+            // ===============================
+            // 🔍 EXTRACCIÓN DE CONTENIDO
+            // ===============================
+            switch (type) {
+              case 'text':
+                textoExtraido = message.text?.body ?? '';
+                break;
+
+              case 'image': {
+                const mimeType = message.image?.mime_type ?? null;
+                textoExtraido = message.image?.caption ?? '[Imagen]';
+
+                mediaData = {
+                  mediaId: message.image?.id,
+                  kind: 'image',
+                  mimeType,
+                  filename: null,
+                  extension: extFromMime(mimeType),
+                  direction,
+                };
+                break;
+              }
+
+              case 'document': {
+                const mimeType = message.document?.mime_type ?? null;
+                const filename = message.document?.filename ?? null;
+                textoExtraido =
+                  message.document?.caption ??
+                  `[Documento${filename ? `: ${filename}` : ''}]`;
+
+                mediaData = {
+                  mediaId: message.document?.id,
+                  kind: 'document',
+                  mimeType,
+                  filename,
+                  extension: extFromFilename(filename) ?? extFromMime(mimeType),
+                  direction,
+                };
+                break;
+              }
+
+              case 'audio': {
+                const mimeType = message.audio?.mime_type ?? null;
+                textoExtraido = '[Audio]';
+
+                mediaData = {
+                  mediaId: message.audio?.id,
+                  kind: 'audio',
+                  mimeType,
+                  filename: null,
+                  extension: extFromMime(mimeType) ?? 'ogg',
+                  direction,
+                };
+                break;
+              }
+
+              default:
+                textoExtraido = `[${type}]`;
+            }
+
+            // ===============================
+            // 🚀 DELEGAR AL ORQUESTADOR
+            // ===============================
+            await this.orquestador.handleIncomingMessage({
+              empresaSlug: 'nova-sistemas',
+              empresaNombreFallback: 'Nova Sistemas',
+              telefono: from,
+              nombreClienteWhatsApp: profileName,
+              canal: ChatChannel.WHATSAPP,
+
+              wamid,
+              timestamp,
+              replyToWamid,
+
+              direction,
+              to: toNumber,
+
+              type: typeEnum,
+              texto: textoExtraido,
+              media: mediaData,
+            });
           }
         }
-        return res.sendStatus(HttpStatus.OK);
-      } catch (error) {
-        this.logger.error('Error manejando webhook de WhatsApp', error as any);
-        return res.sendStatus(HttpStatus.INTERNAL_SERVER_ERROR);
       }
-    }
-
-    // CASO B MENSAJE NUEVO
-    if (changes.statuses && changes.statuses.length > 0) {
-      const status = changes.statuses[0];
-      await this.orquestador.handleStatusUpdate(status);
-      return res.sendStatus(HttpStatus.OK); // 🔥 ESTO FALTABA
+    } catch (error) {
+      this.logger.error('Error en webhook WhatsApp', error);
+    } finally {
+      return res.sendStatus(HttpStatus.OK);
     }
   }
 }
