@@ -244,7 +244,19 @@ export class ChatOrchestratorService {
       .join('\n');
 
     //Buscar contexto en base de conocimiento
-    const knChunks = await this.knowledgeService.search(empresa.id, texto, 7);
+    // const knChunks = await this.knowledgeService.search(empresa.id, texto, 7);
+
+    let knChunks: any[] = [];
+    try {
+      knChunks = await this.knowledgeService.search(empresa.id, texto, 7);
+    } catch (e) {
+      this.logger.warn(
+        'Fallo crítico en knowledgeService, continuando sin contexto.',
+      );
+      knChunks = [];
+    }
+
+    // const contextText = knChunks;
 
     const contextText = knChunks
       .map(

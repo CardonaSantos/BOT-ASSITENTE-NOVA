@@ -111,46 +111,58 @@ export class KnowledgeService {
   // ----------------------------
   // BÚSQUEDA VECTORIAL
   // ----------------------------
+  // En knowledge.service.ts
+
   async search(
     empresaId: number,
     query: string,
     limit = 7,
   ): Promise<KnowledgeSearchResult[]> {
-    const embedding = await this.fireworksIa.getEmbedding(query);
-    const vectorLiteral = JSON.stringify(embedding);
+    // 1. Validación preventiva: Si no hay texto, no gastes tokens ni llames a la API
+    if (!query || query.trim().length === 0) {
+      return [];
+    }
 
-    const rows = await this.prisma.$queryRawUnsafe<KnowledgeSearchResult[]>(
-      `
-  SELECT
-    kc."id",
-    kc."texto",
-    kc."documentId",
-    kc."indice",
-    kd."titulo",
-    kd."tipo",
-    kc."embedding" <-> $2::vector AS "distance"
-  FROM "KnowledgeChunk" kc
-  JOIN "KnowledgeDocument" kd ON kc."documentId" = kd."id"
-  WHERE kd."empresaId" = $1
-  ORDER BY "distance" ASC
-  LIMIT $3
-  `,
-      empresaId,
-      vectorLiteral,
-      limit,
-    );
+    try {
+      // Intentamos generar el embedding
+      const embedding = await this.fireworksIa.getEmbedding(query);
 
-    // this.logger.debug(
-    //   `[RAG] Resultados para empresaId=${empresaId}, limit=${limit}: ${rows.length} chunks`,
-    // );
+      // Si la API de Fireworks falla, saltará al catch de abajo 👇
+      const vectorLiteral = JSON.stringify(embedding);
 
-    // rows.forEach((row, idx) => {
-    //   this.logger.debug(
-    //     `[RAG] #${idx} docId=${row.documentId} idx=${row.indice} titulo="${row.titulo}" tipo=${row.tipo} distance=${row.distance}`,
-    //   );
-    // });
+      const rows = await this.prisma.$queryRawUnsafe<KnowledgeSearchResult[]>(
+        `
+      SELECT
+        kc."id",
+        kc."texto",
+        kc."documentId",
+        kc."indice",
+        kd."titulo",
+        kd."tipo",
+        kc."embedding" <-> $2::vector AS "distance"
+      FROM "KnowledgeChunk" kc
+      JOIN "KnowledgeDocument" kd ON kc."documentId" = kd."id"
+      WHERE kd."empresaId" = $1
+      ORDER BY "distance" ASC
+      LIMIT $3
+      `,
+        empresaId,
+        vectorLiteral,
+        limit,
+      );
 
-    return rows;
+      return rows;
+    } catch (error) {
+      // 🛡️ BLINDAJE: Capturamos el error aquí para que no rompa el flujo del bot
+      this.logger.error(
+        `Error al buscar contexto (RAG) para empresa ${empresaId}. Query: "${query.slice(0, 50)}..."`,
+        error,
+      );
+
+      // Devolvemos un array vacío.
+      // Para el orquestador, será como si simplemente "no encontró nada relevante".
+      return [];
+    }
   }
 
   async findAllKnowledge() {
