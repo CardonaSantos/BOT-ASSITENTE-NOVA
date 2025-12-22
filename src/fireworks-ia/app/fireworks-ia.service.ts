@@ -208,6 +208,10 @@ ${outputSection}
 
             const resultadoCrm = await this.crmService.create(ticketDto);
 
+            if (!resultadoCrm || typeof resultadoCrm !== 'object') {
+              throw new Error('CRM devolvió respuesta inválida');
+            }
+
             toolOutputContent = JSON.stringify({
               status: 'success',
               ticket_id: resultadoCrm?.id,

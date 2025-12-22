@@ -203,6 +203,22 @@ export class PrismaWhatsappMessage implements WhatsappMessageRepository {
     errorMessage: string | null;
   }): Promise<WhatsappMessage> {
     try {
+      if (!data.wamid) {
+        this.logger.log('WAMID NO ENVIADO');
+        return;
+      }
+
+      const watzMessage = await this.prisma.whatsappMessage.findUnique({
+        where: {
+          wamid: data.wamid,
+        },
+      });
+
+      if (!watzMessage) {
+        this.logger.log('Mensaje de whatsa en DB no encontrado');
+        return;
+      }
+
       const row = await this.prisma.whatsappMessage.update({
         where: {
           wamid: data.wamid,
