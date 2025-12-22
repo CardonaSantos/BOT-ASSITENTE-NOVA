@@ -269,63 +269,40 @@ export class ChatOrchestratorService {
       contenido: reply,
     });
 
-    try {
-      const sent = await this.whatsappApiMetaService.sendText(telefono, reply);
-      const outWamid = sent?.messages?.[0]?.id ?? null;
+    const { wamid: outWamid } = await this.whatsappApiMetaService.sendText(
+      telefono,
+      reply,
+    );
 
-      const outMsg = await this.whatsappMessage.upsertByWamid({
-        wamid: outWamid ?? `local-${crypto.randomUUID()}`,
-        chatSessionId: session.id!,
-        clienteId: cliente.id,
-        direction: WazDirection.OUTBOUND,
-        from: params.to,
-        to: telefono,
-        type: WazMediaType.TEXT,
-        body: reply,
-        status: WazStatus.SENT,
-        timestamp: BigInt(dayjs().tz(TZGT).unix()),
-        replyToWamid: wamid,
-        mediaUrl: null,
-        mediaMimeType: null,
-        mediaSha256: null,
-      });
+    const outMsg = await this.whatsappMessage.upsertByWamid({
+      wamid: outWamid ?? `local-${crypto.randomUUID()}`,
+      chatSessionId: session.id!,
+      clienteId: cliente.id,
 
-      // NOTIFICAR UI
-      this.broadcast.notifyCrmUI('nuvia:new-message', {
-        wamid: outMsg.id,
-        status: outMsg.status,
-      });
+      direction: WazDirection.OUTBOUND,
+      from: params.to,
+      to: telefono,
 
-      return { status: 'replied', userMessage, botMessage, reply };
-    } catch (err: any) {
-      this.logger.error('Fallo enviando reply a Meta', err);
-      await this.whatsappMessage.upsertByWamid({
-        wamid: `local-${crypto.randomUUID()}`,
-        chatSessionId: session.id!,
-        clienteId: cliente.id,
+      type: WazMediaType.TEXT,
+      body: reply,
 
-        direction: WazDirection.OUTBOUND,
-        from: params.to,
-        to: telefono,
+      status: outWamid ? WazStatus.SENT : WazStatus.FAILED,
+      replyToWamid: wamid,
 
-        type: WazMediaType.TEXT,
-        body: reply,
+      timestamp: BigInt(dayjs().tz(TZGT).unix()),
 
-        mediaUrl: null,
-        mediaMimeType: null,
-        mediaSha256: null,
+      mediaUrl: null,
+      mediaMimeType: null,
+      mediaSha256: null,
+    });
 
-        status: WazStatus.FAILED,
-        replyToWamid: wamid,
-        timestamp: BigInt(Math.floor(Date.now() / 1000)),
+    // NOTIFICAR UI (esto tampoco debe romper nada)
+    this.broadcast.notifyCrmUI('nuvia:new-message', {
+      wamid: outMsg.id,
+      status: outMsg.status,
+    });
 
-        // si tu upsert permite estos campos:
-        // errorCode: 'META_SEND_FAILED',
-        // errorMessage: err?.message ?? 'unknown',
-      });
-
-      return { status: 'replied', userMessage, botMessage, reply };
-    }
+    return { status: 'replied', userMessage, botMessage, reply };
   }
 
   /**
@@ -394,4 +371,11 @@ export class ChatOrchestratorService {
       }
     }
   }
+}
+function sanitizeWhatsAppText(text: string): string {
+  if (!text) return '✅ Ticket creado correctamente.';
+  return text
+    .replace(/\u0000/g, '')
+    .trim()
+    .slice(0, 4000); // WhatsApp safe
 }

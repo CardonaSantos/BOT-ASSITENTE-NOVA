@@ -10,35 +10,42 @@ type MetaSendMessageResponse = {
   messages?: { id: string }[];
 };
 
+function sanitizeWhatsAppText(text: string): string {
+  if (!text) return '✅ Ticket creado correctamente.';
+  return text
+    .replace(/\u0000/g, '')
+    .trim()
+    .slice(0, 4000); // WhatsApp safe
+}
+
 @Injectable()
 export class WhatsappApiMetaService {
   private readonly logger = new Logger(WhatsappApiMetaService.name);
   constructor(private readonly http: HttpService) {}
 
-  async sendText(to: string, text: string): Promise<MetaSendMessageResponse> {
+  async sendText(to: string, text: string): Promise<{ wamid: string | null }> {
+    const bodyText = sanitizeWhatsAppText(text);
+
+    this.logger.debug('📤 Enviando a Meta:', {
+      to,
+      length: bodyText.length,
+      preview: bodyText.slice(0, 200),
+    });
+
     try {
-      let safeText = text;
-
-      // 🛡️ Blindaje contra respuestas vacías del LLM
-      if (!safeText || safeText.trim().length === 0) {
-        this.logger.warn(`Texto vacío detectado. Enviando fallback a ${to}`);
-        safeText =
-          '✅ Tu ticket fue creado correctamente. Un técnico se pondrá en contacto contigo.';
-      }
-
       const response = await this.http.axiosRef.post('/messages', {
         messaging_product: 'whatsapp',
         to,
         type: 'text',
-        text: { body: safeText },
+        text: { body: bodyText },
       });
 
-      this.logger.log(`Mensaje enviado a ${to}. Status: ${response.status}`);
-      this.logger.debug(JSON.stringify(response.data));
+      const wamid = response?.data?.messages?.[0]?.id ?? null;
 
-      return response.data as MetaSendMessageResponse;
+      return { wamid };
     } catch (error) {
-      throwFatalError(error, this.logger, 'WhatsappApiMetaService - sendText');
+      this.logger.error('Meta sendText failed', error);
+      return { wamid: null }; // 🔑 NUNCA lanzar
     }
   }
 
