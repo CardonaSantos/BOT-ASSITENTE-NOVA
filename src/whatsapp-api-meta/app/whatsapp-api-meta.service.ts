@@ -17,19 +17,28 @@ export class WhatsappApiMetaService {
 
   async sendText(to: string, text: string): Promise<MetaSendMessageResponse> {
     try {
+      let safeText = text;
+
+      // 🛡️ Blindaje contra respuestas vacías del LLM
+      if (!safeText || safeText.trim().length === 0) {
+        this.logger.warn(`Texto vacío detectado. Enviando fallback a ${to}`);
+        safeText =
+          '✅ Tu ticket fue creado correctamente. Un técnico se pondrá en contacto contigo.';
+      }
+
       const response = await this.http.axiosRef.post('/messages', {
         messaging_product: 'whatsapp',
         to,
         type: 'text',
-        text: { body: text },
+        text: { body: safeText },
       });
 
       this.logger.log(`Mensaje enviado a ${to}. Status: ${response.status}`);
       this.logger.debug(JSON.stringify(response.data));
 
-      return response.data as MetaSendMessageResponse; //  aquí viene messages[0].id
+      return response.data as MetaSendMessageResponse;
     } catch (error) {
-      throwFatalError(error, this.logger, 'WhatsappApiMetaService -sendText');
+      throwFatalError(error, this.logger, 'WhatsappApiMetaService - sendText');
     }
   }
 

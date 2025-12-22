@@ -102,6 +102,11 @@ export class ChatOrchestratorService {
       media,
     } = params;
 
+    if (params.direction !== WazDirection.INBOUND) {
+      this.logger.warn('Mensaje no entrante ignorado por IA');
+      return;
+    }
+
     //  Empresa
     const empresa = await this.empresaService.ensureBySlug(
       empresaSlug,

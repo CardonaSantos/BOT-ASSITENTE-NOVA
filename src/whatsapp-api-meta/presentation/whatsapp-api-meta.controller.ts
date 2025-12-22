@@ -94,6 +94,16 @@ export class WhatsappApiMetaController {
 
     if (!changes) return { status: 'ignored' };
 
+    // NO sea mensaje entrante
+    const hasInboundMessage =
+      Array.isArray(changes.messages) &&
+      changes.messages.length > 0 &&
+      changes.messages[0].from;
+
+    if (!hasInboundMessage) {
+      return res.sendStatus(HttpStatus.OK);
+    }
+
     // CASO A MENSAJE NUEVO
     if (changes.messages && changes.messages.length > 0) {
       logWhatsAppWebhook(this.logger, req, body);
@@ -225,6 +235,7 @@ export class WhatsappApiMetaController {
     if (changes.statuses && changes.statuses.length > 0) {
       const status = changes.statuses[0];
       await this.orquestador.handleStatusUpdate(status);
+      return res.sendStatus(HttpStatus.OK); // 🔥 ESTO FALTABA
     }
   }
 }

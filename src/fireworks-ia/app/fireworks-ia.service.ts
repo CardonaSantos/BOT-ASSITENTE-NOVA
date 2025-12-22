@@ -217,6 +217,11 @@ ${outputSection}
               ticket_id: resultadoCrm?.id,
               mensaje: 'Ticket creado correctamente.',
             });
+
+            messages.push({
+              role: 'assistant',
+              content: `📌 Ticket de soporte creado con ID ${resultadoCrm.id}. No crear otro ticket para este caso en especifico.`,
+            });
           } catch (error) {
             console.error(error);
             toolOutputContent = JSON.stringify({
