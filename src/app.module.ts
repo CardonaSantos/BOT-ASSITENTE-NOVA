@@ -15,6 +15,7 @@ import { ChatOrchestratorModule } from './chat-orchestrator/chat-orchestrator.mo
 import { BotModule } from './bot/bot.module';
 import { CloudStorageDoSpacesModule } from './cloud-storage-dospaces/cloud-storage-dospaces.module';
 import { WhatsappMessageModule } from './whatsapp/chat/chat.module';
+import { CrmModule } from './crm/crm.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { WhatsappMessageModule } from './whatsapp/chat/chat.module';
     ChatOrchestratorModule,
     BotModule,
     CloudStorageDoSpacesModule,
+    CrmModule,
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService],

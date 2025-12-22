@@ -2,8 +2,42 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { FIREWORKS_CLIENT } from '../infraestructure/fireworks-ia.client';
 import OpenAI from 'openai';
 import { ConfigService } from '@nestjs/config';
-import { ChatCompletionMessageParam } from 'openai/resources/index';
+import {
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+} from 'openai/resources/index';
 import { PrismaService } from 'src/prisma/prisma-service/prisma-service.service';
+import { CrmService } from 'src/crm/app/crm.service';
+import { CreateCrmDto } from 'src/crm/dto/create-crm.dto';
+
+// DEFINICION DE HERRAMIENTAS
+const FIREWORKS_TOOLS: ChatCompletionTool[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'crear_ticket_soporte',
+      description: 'Crea un ticket de soporte técnico...',
+      parameters: {
+        type: 'object',
+        properties: {
+          titulo: {
+            // Campo separado
+            type: 'string',
+            description:
+              'Un título corto y descriptivo del problema. Ej: "Falla de conexión Wifi"',
+          },
+          descripcion: {
+            // Campo separado
+            type: 'string',
+            description:
+              'Detalle completo del problema técnico, fecha y nombre del cliente y su contacto.',
+          },
+        },
+        required: ['titulo', 'descripcion'], // Obligar a llenar
+      },
+    },
+  },
+];
 
 @Injectable()
 export class FireworksIaService {
@@ -14,6 +48,7 @@ export class FireworksIaService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly crmService: CrmService,
 
     @Inject(FIREWORKS_CLIENT) private readonly fireworks: OpenAI,
     private readonly config: ConfigService,
@@ -118,6 +153,7 @@ ${historySection}
 ${outputSection}
   `.trim();
 
+    // PRIMERA CALL
     const messages: ChatCompletionMessageParam[] = [
       {
         role: 'system',
@@ -129,17 +165,84 @@ ${outputSection}
       },
     ];
 
-    const completion = await this.fireworks.chat.completions.create({
+    const initialResponse = await this.fireworks.chat.completions.create({
       model: this.chatModel,
       messages,
-      max_completion_tokens,
-      temperature,
-      top_p,
-      presence_penalty,
-      frequency_penalty,
+      tools: FIREWORKS_TOOLS,
+      tool_choice: 'auto',
+      max_completion_tokens: botParams.maxCompletionTokens ?? 512,
+      temperature: botParams.temperature ?? 0.3,
     });
 
-    return completion.choices[0].message.content ?? '';
+    const responseMessage = initialResponse.choices[0].message;
+    if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
+      this.logger.log(
+        `El modelo requiere ejecutar ${responseMessage.tool_calls.length} funciones`,
+      );
+
+      //añadir el mensaje del asistente al historial
+      messages.push(responseMessage);
+
+      for (const toolCall of responseMessage.tool_calls) {
+        // Validación que sea de tipo función para obtener el tipo de la funcion
+        if (toolCall.type !== 'function') {
+          this.logger.warn(`Tipo de tool no soportado: ${toolCall.type}`);
+          continue;
+        }
+
+        const functionName = toolCall.function.name;
+
+        this.logger.log(`Intentando ejecutar función: ${functionName}`);
+
+        let toolOutputContent = '';
+
+        if (functionName === 'crear_ticket_soporte') {
+          try {
+            const args = JSON.parse(toolCall.function.arguments);
+            this.logger.log(`Argumentos recibidos: ${JSON.stringify(args)}`);
+
+            const ticketDto: CreateCrmDto = {
+              titulo: args.titulo || 'Ticket generado por Nuvia', // Fallback por seguridad
+              descripcion: args.descripcion || 'Sin descripción proporcionada',
+            };
+
+            const resultadoCrm = await this.crmService.create(ticketDto);
+
+            toolOutputContent = JSON.stringify({
+              status: 'success',
+              ticket_id: resultadoCrm?.id,
+              mensaje: 'Ticket creado correctamente.',
+            });
+          } catch (error) {
+            console.error(error);
+            toolOutputContent = JSON.stringify({
+              status: 'error',
+              mensaje: 'Error conectando con CRM.',
+            });
+          }
+        } else {
+          toolOutputContent = JSON.stringify({ error: 'Función desconocida' });
+        }
+
+        messages.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: toolOutputContent,
+        });
+      }
+
+      // SEGUNDA LLAMADA
+      const finalDobleCall = await this.fireworks.chat.completions.create({
+        model: this.chatModel,
+        messages,
+        max_completion_tokens,
+        temperature,
+      });
+
+      return finalDobleCall.choices[0].message.content ?? '';
+    }
+    // CALL NORMAL
+    return responseMessage.content ?? '';
   }
 
   /**
