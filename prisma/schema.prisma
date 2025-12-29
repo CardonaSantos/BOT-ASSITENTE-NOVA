@@ -125,6 +125,8 @@ model Cliente {
 
   sesiones      ChatSession[]
 
+  ultimoMensajeFecha DateTime @default(now())
+
   // Historial completo de WhatsApp de este cliente
   whatsappHistory WhatsappMessage[]
   // Un teléfono no se repite dentro de la misma empresa

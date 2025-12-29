@@ -7,6 +7,9 @@ import { throwFatalError } from 'src/Utils/CommonFatalError';
 import { FindClientesMessagesQuery } from '../dto/dto-pagination';
 import { selectedCliente } from '../selects/select-cliente';
 import { Prisma } from '@prisma/client';
+
+import { dayjs } from '../../Utils/dayjs.config';
+
 const normalize = (s: string) =>
   s
     .normalize('NFD')
@@ -170,7 +173,6 @@ export class PrismaClienteRepository implements ClienteRepository {
     }
   }
 
-  /** 🔥 Implementación limpia de la paginación */
   async findManyWithPagination(q: FindClientesMessagesQuery) {
     const { take = 50, skip = 0 } = q;
 
@@ -214,5 +216,18 @@ export class PrismaClienteRepository implements ClienteRepository {
         hasPreviousPage: skip > 0,
       },
     };
+  }
+
+  // ACTUALIZAR EL CAMPO DE ULTIMO MENSAJE
+  async updateUltimoMensaje(id: number): Promise<void> {
+    await this.prisma.cliente.update({
+      where: {
+        id,
+      },
+      data: {
+        ultimoMensajeFecha: dayjs().toDate(),
+      },
+    });
+    return;
   }
 }

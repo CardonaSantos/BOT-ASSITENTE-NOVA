@@ -31,4 +31,6 @@ export interface ClienteRepository {
       hasPreviousPage: boolean;
     };
   }>;
+
+  updateUltimoMensaje(id: number): Promise<void>;
 }

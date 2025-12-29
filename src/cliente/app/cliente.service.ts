@@ -63,4 +63,8 @@ export class ClienteService {
   ): Promise<Cliente> {
     return this.repo.upsertByEmpresaAndTelefono(empresaId, telefono, nombre);
   }
+
+  async updateUltimoMensaje(id: number) {
+    return await this.updateUltimoMensaje(id);
+  }
 }

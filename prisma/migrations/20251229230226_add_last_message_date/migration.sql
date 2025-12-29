@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Cliente" ADD COLUMN     "ultimoMensajeFecha" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;

@@ -216,6 +216,8 @@ export class ChatOrchestratorService {
       timestamp: params.timestamp,
     });
 
+    await this.clienteService.updateUltimoMensaje(cliente.id);
+
     this.broadcast.notifyCrmUI('nuvia:new-message', {
       wamid: isboundMsg.id,
       status: isboundMsg.status,
