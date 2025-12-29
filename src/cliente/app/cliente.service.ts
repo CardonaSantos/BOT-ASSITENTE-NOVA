@@ -65,6 +65,6 @@ export class ClienteService {
   }
 
   async updateUltimoMensaje(id: number) {
-    return await this.updateUltimoMensaje(id);
+    return await this.repo.updateUltimoMensaje(id);
   }
 }
