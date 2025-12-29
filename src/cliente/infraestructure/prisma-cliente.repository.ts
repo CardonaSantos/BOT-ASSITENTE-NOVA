@@ -199,7 +199,7 @@ export class PrismaClienteRepository implements ClienteRepository {
       this.prisma.cliente.findMany({
         where,
         select: selectedCliente, // Usamos nuestro selector con count
-        orderBy: [{ whatsappHistory: { _count: 'desc' } }],
+        orderBy: [{ ultimoMensajeFecha: 'desc' }],
         take,
         skip,
       }),
