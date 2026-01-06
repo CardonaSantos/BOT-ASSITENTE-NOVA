@@ -3,11 +3,11 @@ import { KnowledgeRepository } from '../domain/knowledge.repository';
 import { Knowledge } from '../entities/knowledge.entity';
 import { throwFatalError } from 'src/Utils/CommonFatalError';
 import { PrismaService } from 'src/prisma/prisma-service/prisma-service.service';
-import { KnowledgeDocument } from '@prisma/client';
+import { KnowledgeDocument, Prisma } from '@prisma/client';
 import { splitText } from 'src/Utils/splitterText';
 import { FireworksIaService } from 'src/fireworks-ia/app/fireworks-ia.service';
+import { splitTextRag } from '../splitTest';
 
-@Injectable()
 export class PrismaKnowledgeRepository implements KnowledgeRepository {
   private readonly logger = new Logger(PrismaKnowledgeRepository.name);
 
@@ -43,29 +43,53 @@ export class PrismaKnowledgeRepository implements KnowledgeRepository {
         );
       }
 
-      // 1) Chunks a partir de textoLargo
-      const chunks = splitText(knowledge.textoLargo);
+      // 1) Chunking
+      const chunks = splitTextRag(knowledge.textoLargo);
+      this.logger.log(
+        `Creando knowledge (${knowledge.tipo}) con ${chunks.length} chunks`,
+      );
 
-      // 2) Embeddings (modelo transformador)
-      const embeddings = await this.fireworksIa.embedMany(chunks);
+      if (chunks.length === 0) {
+        throw new Error('No se generaron chunks válidos para el documento');
+      }
 
-      // 3) Crear KnowledgeDocument (guardamos resumen + textoLargo completo)
-      const row = await this.prisma.knowledgeDocument.create({
-        data: {
-          empresaId: knowledge.empresaId,
-          tipo: knowledge.tipo,
-          externoId: knowledge.externoId,
-          origen: knowledge.origen,
-          titulo: knowledge.titulo,
-          descripcion: knowledge.descripcion,
-          textoLargo: knowledge.textoLargo,
-        },
+      // 2) Embeddings (batch de 8)
+      const embeddings: number[][] = [];
+
+      for (let i = 0; i < chunks.length; i += 8) {
+        const batch = chunks.slice(i, i + 8);
+        const batchEmbeddings = await this.fireworksIa.embedMany(batch);
+        embeddings.push(...batchEmbeddings);
+      }
+
+      if (chunks.length !== embeddings.length) {
+        throw new Error(
+          `Mismatch chunks (${chunks.length}) vs embeddings (${embeddings.length})`,
+        );
+      }
+
+      // 3) TRANSACCIÓN COMPLETA
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Crear documento
+        const row = await tx.knowledgeDocument.create({
+          data: {
+            empresaId: knowledge.empresaId,
+            tipo: knowledge.tipo,
+            externoId: knowledge.externoId,
+            origen: knowledge.origen,
+            titulo: knowledge.titulo,
+            descripcion: knowledge.descripcion,
+            textoLargo: knowledge.textoLargo,
+          },
+        });
+
+        // Insertar chunks usando el mismo tx
+        await this.insertChunksTx(tx, row.id, chunks, embeddings);
+
+        return row;
       });
 
-      // 4) Insertar chunks + embeddings
-      await this.insertChunks(row.id, chunks, embeddings);
-
-      const domain = this.toDomain(row);
+      const domain = this.toDomain(result);
       if (!domain) {
         throw new Error('Error al crear KnowledgeDocument: resultado vacío');
       }
@@ -126,22 +150,67 @@ export class PrismaKnowledgeRepository implements KnowledgeRepository {
 
   async update(id: number, data: Partial<Knowledge>): Promise<Knowledge> {
     try {
-      const rowToUpdate = await this.prisma.knowledgeDocument.update({
-        where: {
-          id,
-        },
-        data: {
-          titulo: data.titulo,
-          descripcion: data.descripcion,
-          textoLargo: data.textoLargo,
-          tipo: data.tipo,
-          origen: data.origen,
-          empresaId: data.empresaId,
-          externoId: data.externoId,
-        },
-      });
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.knowledgeDocument.findUnique({
+          where: { id },
+        });
 
-      return this.toDomain(rowToUpdate);
+        if (!existing) {
+          throw new Error(`KnowledgeDocument ${id} no encontrado`);
+        }
+
+        const textoCambio =
+          typeof data.textoLargo === 'string' &&
+          data.textoLargo.trim() !== existing.textoLargo?.trim();
+
+        // Update del documento
+        const updated = await tx.knowledgeDocument.update({
+          where: { id },
+          data: {
+            titulo: data.titulo,
+            descripcion: data.descripcion,
+            tipo: data.tipo,
+            origen: data.origen,
+            empresaId: data.empresaId,
+            externoId: data.externoId,
+            textoLargo: data.textoLargo,
+          },
+        });
+
+        //  Si cambió el texto → REINDEXAR
+        if (textoCambio) {
+          // borrar chunks viejos
+          await tx.knowledgeChunk.deleteMany({
+            where: { documentId: id },
+          });
+
+          // chunking nuevo
+          const chunks = splitTextRag(data.textoLargo!);
+
+          if (chunks.length === 0) {
+            throw new Error('No se generaron chunks válidos al actualizar');
+          }
+
+          // embeddings nuevos (batch de 8)
+          const embeddings: number[][] = [];
+          for (let i = 0; i < chunks.length; i += 8) {
+            const batch = chunks.slice(i, i + 8);
+            const batchEmbeddings = await this.fireworksIa.embedMany(batch);
+            embeddings.push(...batchEmbeddings);
+          }
+
+          if (chunks.length !== embeddings.length) {
+            throw new Error(
+              `Mismatch chunks (${chunks.length}) vs embeddings (${embeddings.length})`,
+            );
+          }
+
+          // insertar chunks nuevos
+          await this.insertChunksTx(tx, id, chunks, embeddings);
+        }
+
+        return this.toDomain(updated)!;
+      });
     } catch (error) {
       throwFatalError(error, this.logger, 'PrismaKnowledgeRepository - update');
     }
@@ -164,38 +233,25 @@ export class PrismaKnowledgeRepository implements KnowledgeRepository {
     }
   }
 
-  private async insertChunks(
+  private async insertChunksTx(
+    tx: Prisma.TransactionClient,
     documentId: number,
     chunks: string[],
     embeddings: number[][],
   ): Promise<void> {
-    try {
-      for (let i = 0; i < chunks.length; i++) {
-        const texto = chunks[i];
-        const embedding = embeddings[i];
+    for (let i = 0; i < chunks.length; i++) {
+      const texto = chunks[i];
+      const embedding = embeddings[i];
+      const tokensApprox = Math.round(texto.length / 4);
 
-        if (!embedding) {
-          throw new Error(
-            `No se encontró embedding para el chunk con índice ${i}`,
-          );
-        }
-
-        const embeddingJson = JSON.stringify(embedding);
-        const tokensApprox = Math.round(texto.length / 4);
-
-        await this.prisma.$executeRaw`
-        INSERT INTO "KnowledgeChunk"
-          ("documentId", "indice", "texto", "embedding", "tokens", "creadoEn", "actualizadoEn")
-        VALUES
-          (${documentId}, ${i}, ${texto}, ${embeddingJson}::vector, ${tokensApprox}, NOW(), NOW());
-      `;
-      }
-    } catch (error) {
-      throwFatalError(
-        error,
-        this.logger,
-        'PrismaKnowledgeRepository - insertChunks',
-      );
+      await tx.$executeRaw`
+      INSERT INTO "KnowledgeChunk"
+        ("documentId", "indice", "texto", "embedding", "tokens", "creadoEn", "actualizadoEn")
+      VALUES
+        (${documentId}, ${i}, ${texto}, ${JSON.stringify(
+          embedding,
+        )}::vector, ${tokensApprox}, NOW(), NOW())
+    `;
     }
   }
 }

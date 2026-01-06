@@ -220,7 +220,7 @@ ${outputSection}
 
             messages.push({
               role: 'assistant',
-              content: `📌 Ticket de soporte creado con ID ${resultadoCrm.id}. No crear otro ticket para este caso en especifico.`,
+              content: `Ticket de soporte creado correctamente.`,
             });
           } catch (error) {
             console.error(error);
