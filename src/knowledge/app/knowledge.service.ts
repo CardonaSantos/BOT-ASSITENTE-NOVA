@@ -10,6 +10,10 @@ import {
 import { CreateKnowledgeDocumentDto } from '../dto/create-knowledge-document.dto';
 import { Knowledge } from '../entities/knowledge.entity';
 import { UpdateKnowledgeDto } from '../dto/update-knowledge.dto';
+import {
+  needsLLMRewrite,
+  rewriteHeuristic,
+} from 'src/fireworks-ia/knowledge.utils';
 
 export interface KnowledgeSearchResult {
   id: number;

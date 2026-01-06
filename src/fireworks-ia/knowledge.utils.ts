@@ -1,4 +1,4 @@
-function rewriteHeuristic(query: string): string {
+export function rewriteHeuristic(query: string): string {
   return query
     .toLowerCase()
     .replace(
@@ -10,6 +10,6 @@ function rewriteHeuristic(query: string): string {
     .trim();
 }
 
-function needsLLMRewrite(query: string): boolean {
+export function needsLLMRewrite(query: string): boolean {
   return query.length > 80 || query.split(' ').length > 12;
 }
