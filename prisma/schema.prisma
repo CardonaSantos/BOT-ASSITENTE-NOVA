@@ -19,6 +19,15 @@ enum KnowledgeDocumentType {
   OTRO
 }
 
+enum ChatFlowStep {
+  START
+  IDENTIFICACION_SERVICIO
+  REVISION_ONU
+  DIAGNOSTICO
+  ESCALADO
+}
+
+
 enum ChatRole {
   USER
   ASSISTANT

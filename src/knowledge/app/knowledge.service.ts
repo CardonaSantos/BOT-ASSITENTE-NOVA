@@ -133,22 +133,24 @@ export class KnowledgeService {
 
     try {
       // Rewriting heurístico
-      let rewrittenQuery = rewriteHeuristic(query);
-
-      // Rewriting con LLM solo si vale la pena
-      if (needsLLMRewrite(query)) {
-        try {
-          rewrittenQuery = await this.fireworksIa.rewriteQuery(rewrittenQuery);
-        } catch (e) {
-          this.logger.warn('Falló query rewriting con LLM, usando heurístico');
-        }
-      }
-      this.logger.debug(`RAG query rewrite: "${query}" → "${rewrittenQuery}"`);
+      // let rewrittenQuery = rewriteHeuristic(query);
+      // if (rewrittenQuery.length < 6 || rewrittenQuery.split(' ').length < 2) {
+      //   return [];
+      // }
+      // // Rewriting con LLM solo si vale la pena
+      // if (needsLLMRewrite(query)) {
+      //   try {
+      //     rewrittenQuery = await this.fireworksIa.rewriteQuery(rewrittenQuery);
+      //   } catch (e) {
+      //     this.logger.warn('Falló query rewriting con LLM, usando heurístico');
+      //   }
+      // }
+      // this.logger.debug(`RAG query rewrite: "${query}" → "${rewrittenQuery}"`);
 
       //  Embedding del query limpio
-      const embedding = await this.fireworksIa.getEmbedding(rewrittenQuery);
+      // const embedding = await this.fireworksIa.getEmbedding(rewrittenQuery);
 
-      // const embedding = await this.fireworksIa.getEmbedding(query);
+      const embedding = await this.fireworksIa.getEmbedding(query);
 
       // Si la API de Fireworks falla, saltará al catch de abajo 👇
       const vectorLiteral = JSON.stringify(embedding);
@@ -175,17 +177,17 @@ export class KnowledgeService {
       );
 
       const MAX_DISTANCE = 0.45;
-      return rows
-        .filter((r) => r.distance !== null && r.distance <= MAX_DISTANCE)
-        .sort((a, b) => a.distance - b.distance)
-        .slice(0, limit);
+      // return rows
+      //   .filter((r) => r.distance !== null && r.distance <= MAX_DISTANCE)
+      //   .sort((a, b) => a.distance - b.distance)
+      //   .slice(0, limit);
 
-      // const filtered = rows.filter(
-      //   (r) => r.distance !== null && r.distance <= MAX_DISTANCE,
-      // );
-      // if (filtered.length === 0) return [];
+      const filtered = rows.filter(
+        (r) => r.distance !== null && r.distance <= MAX_DISTANCE,
+      );
+      if (filtered.length === 0) return [];
 
-      // return filtered;
+      return filtered;
 
       // return rows;
     } catch (error) {
