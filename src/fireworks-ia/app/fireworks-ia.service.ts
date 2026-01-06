@@ -174,6 +174,11 @@ ${outputSection}
       temperature: botParams.temperature ?? 0.3,
     });
 
+    this.logger.debug(
+      'INTENTOS DE FUNCION: ',
+      JSON.stringify(initialResponse.choices[0], null, 2),
+    );
+
     const responseMessage = initialResponse.choices[0].message;
     if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
       this.logger.log(
