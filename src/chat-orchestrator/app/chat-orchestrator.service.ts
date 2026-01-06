@@ -154,6 +154,7 @@ export class ChatOrchestratorService {
     let mediaUrl: string | null = null;
     let mediaMimeType: string | null = null;
     let mediaSha256: string | null = null;
+    const mediaUrls: string[] = [];
 
     if (media?.mediaId) {
       const { buffer, meta } = await this.metaWhatsappMedia.fetchMedia(
@@ -190,6 +191,24 @@ export class ChatOrchestratorService {
 
       mediaUrl = uploaded.url ?? uploaded.url ?? null;
     }
+
+    if (mediaUrl) {
+      mediaUrls.push(mediaUrl);
+    }
+
+    let visionText = '';
+
+    if (mediaUrls.length > 0) {
+      visionText = await this.fireworksIa.analyzeImages(mediaUrls);
+    }
+
+    const textWithMedia = visionText
+      ? `${texto}
+
+[DATOS EXTRAÍDOS AUTOMÁTICAMENTE DE IMÁGENES]
+${visionText}
+[FIN DE DATOS EXTRAÍDOS]`
+      : texto;
 
     // ENTRADA DEL CLIENTE
     const isboundMsg = await this.whatsappMessage.upsertByWamid({
@@ -267,12 +286,14 @@ export class ChatOrchestratorService {
       )
       .join('\n\n---\n\n');
 
+    const imagenes = mediaUrl;
+
     //  Pedir respuesta al modelo usando RAG
     const reply = await this.fireworksIa.replyWithContext({
       empresaNombre: empresa.nombre,
       context: contextText,
       historyText,
-      question: texto,
+      question: textWithMedia,
     });
 
     // SALIDA DEL BOT | USUARIO

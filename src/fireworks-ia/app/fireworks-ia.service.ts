@@ -10,6 +10,12 @@ import { PrismaService } from 'src/prisma/prisma-service/prisma-service.service'
 import { CrmService } from 'src/crm/app/crm.service';
 import { CreateCrmDto } from 'src/crm/dto/create-crm.dto';
 
+// import Fireworks from "fireworks-ai";
+
+// const fireworks = new Fireworks({
+//   apiKey: process.env.FIREWORKS_API_KEY!,
+// });
+
 // DEFINICION DE HERRAMIENTAS
 const FIREWORKS_TOOLS: ChatCompletionTool[] = [
   {
@@ -43,6 +49,7 @@ const FIREWORKS_TOOLS: ChatCompletionTool[] = [
 export class FireworksIaService {
   private readonly chatModel: string;
   private readonly embeddingModel: string;
+  private readonly visionModel: string;
 
   private readonly logger = new Logger(FireworksIaService.name);
 
@@ -61,8 +68,12 @@ export class FireworksIaService {
       this.config.get<string>('FIREWORKS_EMBEDDINGS_MODEL') ??
       'fireworks/qwen3-embedding-8b';
 
+    this.visionModel =
+      this.config.get<string>('FIREWORKS_VISION_MODEL') ??
+      'accounts/fireworks/models/qwen3-vl-235b-a22b-instruct';
+
     this.logger.log(
-      `Modelos Fireworks cargados: chat=${this.chatModel}, embeddings=${this.embeddingModel}`,
+      `Modelos Fireworks cargados: chat=${this.chatModel}, embeddings=${this.embeddingModel}, vision=${this.visionModel}`,
     );
   }
 
@@ -74,8 +85,9 @@ export class FireworksIaService {
     context: string;
     historyText: string;
     question: string;
+    medias?: string[];
   }): Promise<string> {
-    const { empresaNombre, context, historyText, question } = params;
+    const { empresaNombre, context, historyText, question, medias } = params;
 
     const botParams = await this.prisma.bot.findUnique({
       where: { id: 1 },
@@ -185,11 +197,9 @@ ${outputSection}
         `El modelo requiere ejecutar ${responseMessage.tool_calls.length} funciones`,
       );
 
-      //añadir el mensaje del asistente al historial
       messages.push(responseMessage);
 
       for (const toolCall of responseMessage.tool_calls) {
-        // Validación que sea de tipo función para obtener el tipo de la funcion
         if (toolCall.type !== 'function') {
           this.logger.warn(`Tipo de tool no soportado: ${toolCall.type}`);
           continue;
@@ -255,8 +265,85 @@ ${outputSection}
 
       return finalDobleCall.choices[0].message.content ?? '';
     }
+
     // CALL NORMAL
     return responseMessage.content ?? '';
+  }
+
+  async analyzeImages(urls: string[]): Promise<string> {
+    const results: string[] = [];
+
+    for (const url of urls) {
+      const response = await this.fireworks.chat.completions.create({
+        model: this.visionModel,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'Eres un sistema de análisis visual. Tu función es extraer información visible de imágenes sin inferir ni suponer datos.',
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `
+Analiza cuidadosamente la imagen proporcionada.
+
+Si la imagen es un comprobante de pago, boleta bancaria o transferencia:
+- Extrae ÚNICAMENTE la información que sea claramente visible.
+- Devuelve la información en formato JSON.
+- Usa SOLO los campos que correspondan y que sean visibles.
+- Si un dato no aparece en la imagen, NO lo incluyas.
+- NO inventes datos.
+- NO completes campos faltantes.
+- NO uses null ni strings vacíos.
+- NO agregues explicaciones fuera del JSON.
+
+Formato esperado (ejemplo, puede ser parcial):
+
+{
+  "tipo_documento": "boleta_pago | comprobante_transferencia | otro",
+  "banco": "string",
+  "cliente": "string",
+  "cuenta_destino": "string",
+  "nombre_cuenta_destino": "string",
+  "monto": {
+    "valor": 0,
+    "moneda": "GTQ"
+  },
+  "numero_referencia": "string",
+  "numero_boleta": "string",
+  "fecha": "YYYY-MM-DD",
+  "hora": "HH:MM:SS",
+  "concepto": "string",
+  "observaciones": "string"
+}
+
+Si la imagen NO es un comprobante de pago:
+- Devuelve un JSON con:
+  { "tipo_documento": "otro", "observaciones": "descripción breve de lo que se observa" }
+
+No incluyas texto fuera del JSON.
+`,
+              },
+              {
+                type: 'image_url',
+                image_url: { url },
+              },
+            ],
+          },
+        ],
+        max_completion_tokens: 600,
+      });
+
+      const raw = response.choices[0].message.content ?? '';
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+
+      results.push(jsonMatch ? jsonMatch[0] : raw);
+    }
+
+    return results.join('\n\n');
   }
 
   /**

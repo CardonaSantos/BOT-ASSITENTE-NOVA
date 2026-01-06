@@ -173,40 +173,6 @@ export class KnowledgeService {
   // METODOS PARA CARGA DE DATOS Y ACTUALIZACIONES
 
   /**
-   * Búsqueda vectorial básica: top K chunks por empresa + query.
-   */
-  // async search(
-  //   empresaId: number,
-  //   query: string,
-  //   limit = 5,
-  // ): Promise<KnowledgeSearchResult[]> {
-  //   const embedding = await this.fireworksIa.getEmbedding(query);
-  //   const vectorLiteral = JSON.stringify(embedding);
-
-  //   const rows = await this.prisma.$queryRawUnsafe<KnowledgeSearchResult[]>(
-  //     `
-  //     SELECT
-  //       kc."id",
-  //       kc."texto",
-  //       kc."documentId",
-  //       kc."indice",
-  //       kd."titulo",
-  //       kd."tipo"
-  //     FROM "KnowledgeChunk" kc
-  //     JOIN "KnowledgeDocument" kd ON kc."documentId" = kd."id"
-  //     WHERE kd."empresaId" = $1
-  //     ORDER BY kc."embedding" <-> $2::vector
-  //     LIMIT $3
-  //     `,
-  //     empresaId,
-  //     vectorLiteral,
-  //     limit,
-  //   );
-
-  //   return rows;
-  // }
-
-  /**
    * Parte un texto largo en chunks (~maxLen chars),
    * intentando respetar párrafos y oraciones.
    *
