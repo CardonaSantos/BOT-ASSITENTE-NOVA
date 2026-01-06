@@ -60,7 +60,7 @@ export interface MediaData {
   kind: 'image' | 'document' | 'audio' | 'video' | 'sticker' | 'other';
   mimeType?: string | null; // del webhook (puede venir) o lo completarás con meta.getMediaUrl()
   filename?: string | null; // solo documentos
-  extension?: string | null; // inferida por ti
+  extension?: string | null; //INFERIDA
 }
 
 @Injectable()
@@ -224,7 +224,6 @@ export class ChatOrchestratorService {
     });
 
     // PREPARAR TODO
-
     if (isDesactivated) {
       this.logger.log(
         `Bot desactivado para ${telefono}. Mensaje guardado, pero sin respuesta automática.`,
@@ -233,7 +232,6 @@ export class ChatOrchestratorService {
     }
 
     // PREPARACION DE RESPONSE DEL MODELO
-
     //  Historial
     const history = await this.chatService.getLastMessages(session.id!);
     // SEPARAR Y DIFERENCIAR ENTRE MENSAJE DEL USUARIO Y BOT
@@ -246,11 +244,9 @@ export class ChatOrchestratorService {
       .join('\n');
 
     //Buscar contexto en base de conocimiento
-    // const knChunks = await this.knowledgeService.search(empresa.id, texto, 7);
-
     let knChunks: any[] = [];
     try {
-      knChunks = await this.knowledgeService.search(empresa.id, texto, 7);
+      knChunks = await this.knowledgeService.search(empresa.id, texto, 6);
     } catch (e) {
       this.logger.warn(
         'Fallo crítico en knowledgeService, continuando sin contexto.',
@@ -259,11 +255,20 @@ export class ChatOrchestratorService {
     }
 
     // const contextText = knChunks;
-
+    // const contextText = knChunks
+    //   .map(
+    //     (c, idx) =>
+    //       `#${idx + 1} [distance=${c.distance?.toFixed(4) ?? 'N/A'}] (${c.tipo}) ${c.titulo}:\n${c.texto}`,
+    //   )
+    //   .join('\n\n---\n\n');
     const contextText = knChunks
       .map(
         (c, idx) =>
-          `#${idx + 1} [distance=${c.distance?.toFixed(4) ?? 'N/A'}] (${c.tipo}) ${c.titulo}:\n${c.texto}`,
+          `Documento ${idx + 1}
+Tipo: ${c.tipo}
+Título: ${c.titulo}
+Contenido:
+${c.texto}`,
       )
       .join('\n\n---\n\n');
 

@@ -44,6 +44,8 @@ export class FireworksIaService {
   private readonly chatModel: string;
   private readonly embeddingModel: string;
 
+  private readonly rewriteModel: string;
+
   private readonly logger = new Logger(FireworksIaService.name);
 
   constructor(
@@ -59,7 +61,11 @@ export class FireworksIaService {
 
     this.embeddingModel =
       this.config.get<string>('FIREWORKS_EMBEDDINGS_MODEL') ??
-      'fireworks/qwen3-embedding-8b';
+      'accounts/fireworks/models/qwen3-embedding-8b';
+
+    this.rewriteModel =
+      this.config.get<string>('FIREWORKS_REWRITE_MODEL') ??
+      'accounts/fireworks/models/qwen3-8b';
 
     this.logger.log(
       `Modelos Fireworks cargados: chat=${this.chatModel}, embeddings=${this.embeddingModel}`,
@@ -184,7 +190,6 @@ ${outputSection}
       messages.push(responseMessage);
 
       for (const toolCall of responseMessage.tool_calls) {
-        // Validación que sea de tipo función para obtener el tipo de la funcion
         if (toolCall.type !== 'function') {
           this.logger.warn(`Tipo de tool no soportado: ${toolCall.type}`);
           continue;
@@ -218,9 +223,11 @@ ${outputSection}
               mensaje: 'Ticket creado correctamente.',
             });
 
-            messages.push({
-              role: 'assistant',
-              content: `📌 Ticket de soporte creado con ID ${resultadoCrm.id}. No crear otro ticket para este caso en especifico.`,
+            toolOutputContent = JSON.stringify({
+              status: 'success',
+              ticket_id: resultadoCrm.id,
+              client_notification:
+                'Si el cliente es de internet residencial u otro servicio de NOVA y su número está registrado, recibirá un mensaje por WhatsApp. De lo contrario, soporte se comunicará lo antes posible.',
             });
           } catch (error) {
             console.error(error);
@@ -243,6 +250,7 @@ ${outputSection}
       // SEGUNDA LLAMADA
       const finalDobleCall = await this.fireworks.chat.completions.create({
         model: this.chatModel,
+        tool_choice: 'none', //trunco la nueva llamada porque solo debe decidir una vez
         messages,
         max_completion_tokens,
         temperature,
@@ -289,5 +297,35 @@ ${outputSection}
     });
 
     return response.data.map((data) => data.embedding as number[]);
+  }
+
+  async rewriteQuery(query: string): Promise<string> {
+    const response = await this.fireworks.chat.completions.create({
+      model: this.rewriteModel,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Eres un asistente que reescribe consultas para búsquedas en bases de conocimiento.',
+        },
+        {
+          role: 'user',
+          content: `
+Reescribe la siguiente consulta como una búsqueda corta y objetiva para una base de conocimiento.
+- Elimina saludos, emociones y palabras innecesarias
+- Mantén solo la intención principal
+- No inventes información
+- Devuelve solo la consulta reescrita
+
+Consulta:
+"${query}"
+        `.trim(),
+        },
+      ],
+      temperature: 0.1,
+      max_completion_tokens: 32,
+    });
+
+    return response.choices[0].message.content?.trim() || query;
   }
 }

@@ -1,16 +1,30 @@
-export function splitText(text: string, maxChars = 1500): string[] {
-  const chunks: string[] = [];
-  let current = '';
+export function splitTextRag(
+  text: string,
+  maxChars = 1200,
+  overlapChars = 200,
+): string[] {
+  const paragraphs = text
+    .split(/\n\s*\n+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
 
-  for (const paragraph of text.split(/\n\s*\n+/)) {
-    if ((current + '\n\n' + paragraph).length > maxChars) {
-      if (current.trim().length) chunks.push(current.trim());
-      current = paragraph;
-    } else {
-      current += (current ? '\n\n' : '') + paragraph;
+  const chunks: string[] = [];
+  let buffer = '';
+
+  for (const p of paragraphs) {
+    if ((buffer + '\n\n' + p).length > maxChars) {
+      if (buffer.trim()) {
+        chunks.push(buffer.trim());
+
+        // overlap: tomar últimos X chars
+        buffer = buffer.slice(-overlapChars);
+      }
     }
+
+    buffer += (buffer ? '\n\n' : '') + p;
   }
 
-  if (current.trim().length) chunks.push(current.trim());
+  if (buffer.trim()) chunks.push(buffer.trim());
+
   return chunks;
 }

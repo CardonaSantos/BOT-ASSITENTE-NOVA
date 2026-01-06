@@ -108,24 +108,43 @@ export class KnowledgeService {
     return deleted;
   }
 
-  // ----------------------------
-  // BÚSQUEDA VECTORIAL
-  // ----------------------------
-  // En knowledge.service.ts
-
+  /**
+   * BUSCAR EN VASE VECTORIAL PGADMIN
+   * @param empresaId
+   * @param query
+   * @param limit
+   * @returns
+   */
   async search(
     empresaId: number,
     query: string,
     limit = 7,
   ): Promise<KnowledgeSearchResult[]> {
+    const rawLimit = limit * 3;
+
     // 1. Validación preventiva: Si no hay texto, no gastes tokens ni llames a la API
     if (!query || query.trim().length === 0) {
       return [];
     }
 
     try {
-      // Intentamos generar el embedding
-      const embedding = await this.fireworksIa.getEmbedding(query);
+      // Rewriting heurístico
+      let rewrittenQuery = rewriteHeuristic(query);
+
+      // Rewriting con LLM solo si vale la pena
+      if (needsLLMRewrite(query)) {
+        try {
+          rewrittenQuery = await this.fireworksIa.rewriteQuery(rewrittenQuery);
+        } catch (e) {
+          this.logger.warn('Falló query rewriting con LLM, usando heurístico');
+        }
+      }
+      this.logger.debug(`RAG query rewrite: "${query}" → "${rewrittenQuery}"`);
+
+      //  Embedding del query limpio
+      const embedding = await this.fireworksIa.getEmbedding(rewrittenQuery);
+
+      // const embedding = await this.fireworksIa.getEmbedding(query);
 
       // Si la API de Fireworks falla, saltará al catch de abajo 👇
       const vectorLiteral = JSON.stringify(embedding);
@@ -148,10 +167,23 @@ export class KnowledgeService {
       `,
         empresaId,
         vectorLiteral,
-        limit,
+        rawLimit,
       );
 
-      return rows;
+      const MAX_DISTANCE = 0.45;
+      return rows
+        .filter((r) => r.distance !== null && r.distance <= MAX_DISTANCE)
+        .sort((a, b) => a.distance - b.distance)
+        .slice(0, limit);
+
+      // const filtered = rows.filter(
+      //   (r) => r.distance !== null && r.distance <= MAX_DISTANCE,
+      // );
+      // if (filtered.length === 0) return [];
+
+      // return filtered;
+
+      // return rows;
     } catch (error) {
       // 🛡️ BLINDAJE: Capturamos el error aquí para que no rompa el flujo del bot
       this.logger.error(
@@ -168,42 +200,6 @@ export class KnowledgeService {
   async findAllKnowledge() {
     return this.repo.findAll();
   }
-
-  // METODOS PARA CARGA DE DATOS Y ACTUALIZACIONES
-
-  /**
-   * Búsqueda vectorial básica: top K chunks por empresa + query.
-   */
-  // async search(
-  //   empresaId: number,
-  //   query: string,
-  //   limit = 5,
-  // ): Promise<KnowledgeSearchResult[]> {
-  //   const embedding = await this.fireworksIa.getEmbedding(query);
-  //   const vectorLiteral = JSON.stringify(embedding);
-
-  //   const rows = await this.prisma.$queryRawUnsafe<KnowledgeSearchResult[]>(
-  //     `
-  //     SELECT
-  //       kc."id",
-  //       kc."texto",
-  //       kc."documentId",
-  //       kc."indice",
-  //       kd."titulo",
-  //       kd."tipo"
-  //     FROM "KnowledgeChunk" kc
-  //     JOIN "KnowledgeDocument" kd ON kc."documentId" = kd."id"
-  //     WHERE kd."empresaId" = $1
-  //     ORDER BY kc."embedding" <-> $2::vector
-  //     LIMIT $3
-  //     `,
-  //     empresaId,
-  //     vectorLiteral,
-  //     limit,
-  //   );
-
-  //   return rows;
-  // }
 
   /**
    * Parte un texto largo en chunks (~maxLen chars),
