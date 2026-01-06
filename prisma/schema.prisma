@@ -40,6 +40,26 @@ enum ChatSessionStatus {
   ARCHIVED
 }
 
+
+enum ChatFlowIntent {
+  NONE
+  SOPORTE
+  VENTAS
+  FACTURACION
+  TIENDA
+  INFORMACION
+}
+
+enum ChatFlowStep {
+  NONE
+  IDENTIFICACION
+  DIAGNOSTICO
+  CONFIRMACION
+  ACCION
+  CIERRE
+}
+
+
 /* ---------- EMPRESA / CLIENTE ---------- */
 
 model Empresa {
@@ -164,6 +184,11 @@ model ChatSession {
   actualizadoEn        DateTime          @updatedAt
 
   mensajes             ChatMessage[]
+
+  flowIntent   ChatFlowIntent @default(NONE)
+  flowStep     ChatFlowStep   @default(NONE)
+  flowContext  Json?
+
 
   @@index([empresaId, telefono, canal, estado])
 }
