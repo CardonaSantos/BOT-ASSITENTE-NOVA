@@ -118,17 +118,15 @@ export class KnowledgeService {
     query: string,
     limit = 7,
   ): Promise<KnowledgeSearchResult[]> {
-    // 1. Validación preventiva: Si no hay texto, no gastes tokens ni llames a la API
-    if (!query || query.trim().length === 0) {
+    if (!query || query.trim().length < 3) {
       return [];
     }
 
     try {
-      // Intentamos generar el embedding
       const embedding = await this.fireworksIa.getEmbedding(query);
-
-      // Si la API de Fireworks falla, saltará al catch de abajo 👇
       const vectorLiteral = JSON.stringify(embedding);
+
+      const rawLimit = limit * 3; // overfetch
 
       const rows = await this.prisma.$queryRawUnsafe<KnowledgeSearchResult[]>(
         `
@@ -148,19 +146,22 @@ export class KnowledgeService {
       `,
         empresaId,
         vectorLiteral,
-        limit,
+        rawLimit,
       );
 
-      return rows;
+      const MAX_DISTANCE = 0.45;
+
+      const filtered = rows
+        .filter((r) => r.distance !== null && r.distance <= MAX_DISTANCE)
+        .sort((a, b) => a.distance - b.distance)
+        .slice(0, limit);
+
+      return filtered;
     } catch (error) {
-      // 🛡️ BLINDAJE: Capturamos el error aquí para que no rompa el flujo del bot
       this.logger.error(
-        `Error al buscar contexto (RAG) para empresa ${empresaId}. Query: "${query.slice(0, 50)}..."`,
+        `Error RAG search empresa=${empresaId} query="${query.slice(0, 50)}"`,
         error,
       );
-
-      // Devolvemos un array vacío.
-      // Para el orquestador, será como si simplemente "no encontró nada relevante".
       return [];
     }
   }

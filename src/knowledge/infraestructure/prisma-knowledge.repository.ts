@@ -6,6 +6,7 @@ import { PrismaService } from 'src/prisma/prisma-service/prisma-service.service'
 import { KnowledgeDocument } from '@prisma/client';
 import { splitText } from 'src/Utils/splitterText';
 import { FireworksIaService } from 'src/fireworks-ia/app/fireworks-ia.service';
+import { splitTextRag } from '../splitTest';
 
 @Injectable()
 export class PrismaKnowledgeRepository implements KnowledgeRepository {
@@ -126,22 +127,91 @@ export class PrismaKnowledgeRepository implements KnowledgeRepository {
 
   async update(id: number, data: Partial<Knowledge>): Promise<Knowledge> {
     try {
-      const rowToUpdate = await this.prisma.knowledgeDocument.update({
-        where: {
-          id,
-        },
-        data: {
-          titulo: data.titulo,
-          descripcion: data.descripcion,
-          textoLargo: data.textoLargo,
-          tipo: data.tipo,
-          origen: data.origen,
-          empresaId: data.empresaId,
-          externoId: data.externoId,
-        },
-      });
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.knowledgeDocument.findUnique({
+          where: { id },
+        });
 
-      return this.toDomain(rowToUpdate);
+        if (!existing) {
+          throw new Error(`KnowledgeDocument ${id} no encontrado`);
+        }
+
+        // ¿Cambió el texto largo?
+        const textoCambio =
+          typeof data.textoLargo === 'string' &&
+          data.textoLargo.trim() !== existing.textoLargo?.trim();
+
+        // 1️⃣ Update del documento
+        const updated = await tx.knowledgeDocument.update({
+          where: { id },
+          data: {
+            titulo: data.titulo,
+            descripcion: data.descripcion,
+            tipo: data.tipo,
+            origen: data.origen,
+            empresaId: data.empresaId,
+            externoId: data.externoId,
+            textoLargo: data.textoLargo,
+          },
+        });
+
+        // 2️⃣ Si cambió el texto → REINDEXAR
+        if (textoCambio) {
+          // borrar chunks viejos
+          await tx.knowledgeChunk.deleteMany({
+            where: { documentId: id },
+          });
+
+          // nuevo chunking
+          const chunks = splitTextRag(data.textoLargo!);
+
+          this.logger.log(
+            `Reindexando knowledge ${id} con ${chunks.length} chunks`,
+          );
+
+          if (chunks.length === 0) {
+            throw new Error('No se generaron chunks válidos al actualizar');
+          }
+
+          // embeddings en batches
+          const embeddings: number[][] = [];
+          for (let i = 0; i < chunks.length; i += 8) {
+            const batch = chunks.slice(i, i + 8);
+            const batchEmbeddings = await this.fireworksIa.embedMany(batch);
+            embeddings.push(...batchEmbeddings);
+          }
+
+          if (chunks.length !== embeddings.length) {
+            throw new Error(
+              `Mismatch chunks (${chunks.length}) vs embeddings (${embeddings.length})`,
+            );
+          }
+
+          // insertar nuevos chunks
+          for (let i = 0; i < chunks.length; i++) {
+            const texto = chunks[i];
+            const embedding = embeddings[i];
+            const tokensApprox = Math.round(texto.length / 4);
+
+            await tx.$executeRaw`
+            INSERT INTO "KnowledgeChunk"
+              ("documentId", "indice", "texto", "embedding", "tokens", "creadoEn", "actualizadoEn")
+            VALUES
+              (
+                ${id},
+                ${i},
+                ${texto},
+                ${JSON.stringify(embedding)}::vector,
+                ${tokensApprox},
+                NOW(),
+                NOW()
+              )
+          `;
+          }
+        }
+
+        return this.toDomain(updated)!;
+      });
     } catch (error) {
       throwFatalError(error, this.logger, 'PrismaKnowledgeRepository - update');
     }
