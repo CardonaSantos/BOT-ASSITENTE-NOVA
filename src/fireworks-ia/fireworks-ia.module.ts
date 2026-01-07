@@ -5,15 +5,13 @@ import { FIREWORKS_CLIENT } from './infraestructure/fireworks-ia.client';
 import OpenAI from 'openai';
 import { FireworksIaService } from './app/fireworks-ia.service';
 import { PrismaModuleModule } from 'src/prisma/prisma-module/prisma-module.module';
-import { CrmService } from 'src/crm/app/crm.service';
 import { HttpModule } from '@nestjs/axios';
-import { OpenAiIaService } from './app/open-ia-rag.service';
+import { CrmModule } from 'src/crm/crm.module';
 
 @Module({
-  imports: [ConfigModule, PrismaModuleModule, HttpModule],
+  imports: [ConfigModule, PrismaModuleModule, HttpModule, CrmModule],
   controllers: [FireworksIaController],
   providers: [
-    CrmService,
     {
       provide: FIREWORKS_CLIENT,
       useFactory: (config: ConfigService) => {
