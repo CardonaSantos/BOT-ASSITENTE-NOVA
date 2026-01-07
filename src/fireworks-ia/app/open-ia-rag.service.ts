@@ -47,9 +47,10 @@ export class OpenAiIaService {
     empresaNombre: string;
     historyText: string;
     question: string;
-    context?: string; // Agrego context por si haces RAG manual
+    imageUrls?: string[];
+    context?: string;
   }): Promise<string> {
-    const { empresaNombre, historyText, question, context } = params;
+    const { empresaNombre, imageUrls, historyText, question, context } = params;
 
     // 1. Obtener configuración del Bot
     const botParams = await this.prisma.bot.findUnique({
@@ -96,11 +97,39 @@ FORMATO DE RESPUESTA:
 ${botParams.outputStyle ?? 'Texto claro, profesional y humano'}
 `.trim();
 
-    // 3. Preparar el historial de mensajes
+    const userContent: any[] = [{ type: 'text', text: question }];
+
+    if (imageUrls?.length) {
+      for (const url of imageUrls) {
+        userContent.push({
+          type: 'image_url',
+          image_url: { url },
+        });
+      }
+    }
+
     const messages: ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: question },
+      { role: 'user', content: userContent },
     ];
+
+    // 3. Preparar el historial de mensajes
+    //     const messages: ChatCompletionMessageParam[] = [
+    //       { role: 'system', content: systemPrompt },
+    //     //   { role: 'user', content: question },
+
+    //       {
+    //   role: 'user',
+    //   content: [
+    //     { type: 'text', text: question },
+    //     {
+    //       type: 'image_url',
+    //       image_url: { url: imageUrl }
+    //     }
+    //   ]
+    // }
+
+    //     ];
 
     try {
       // --- PRIMERA LLAMADA A OPENAI ---

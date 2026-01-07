@@ -306,6 +306,7 @@ ${visionText}
         empresaNombre: empresa.nombre,
         historyText,
         question: textWithMedia,
+        imageUrls: mediaUrls,
       });
     } catch (e) {
       this.logger.error('Error OpenAI', e);
