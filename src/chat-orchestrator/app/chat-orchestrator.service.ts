@@ -201,17 +201,14 @@ export class ChatOrchestratorService {
 
     let visionText = '';
 
-    if (mediaUrls.length > 0) {
-      visionText = await this.fireworksIa.analyzeImages(mediaUrls);
-    }
+    const textWithMedia = texto;
+    //      visionText
+    //       ? `${texto}
 
-    const textWithMedia = visionText
-      ? `${texto}
-
-[DATOS EXTRAÍDOS AUTOMÁTICAMENTE DE IMÁGENES]
-${visionText}
-[FIN DE DATOS EXTRAÍDOS]`
-      : texto;
+    // [DATOS EXTRAÍDOS AUTOMÁTICAMENTE DE IMÁGENES]
+    // ${visionText}
+    // [FIN DE DATOS EXTRAÍDOS]`
+    //       : texto;
 
     // ENTRADA DEL CLIENTE
     const isboundMsg = await this.whatsappMessage.upsertByWamid({
