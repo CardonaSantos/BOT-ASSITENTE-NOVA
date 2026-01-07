@@ -27,6 +27,7 @@ import * as isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import * as isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
 import * as customParseFormat from 'dayjs/plugin/customParseFormat';
 import { TZGT } from 'src/Utils/TZGT';
+import { OpenAiIaService } from 'src/fireworks-ia/app/open-ia-rag.service';
 dayjs.extend(customParseFormat);
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -80,6 +81,8 @@ export class ChatOrchestratorService {
     private readonly whatsappApiMetaService: WhatsappApiMetaService, // SERVICION ADICIONAL PARA EVITAR ENROLLAMIENTO DE MODULOS
 
     private readonly broadcast: BroadCastMessageService, // SERVICION ADICIONAL PARA EVITAR ENROLLAMIENTO DE MODULOS
+
+    private readonly openIA: OpenAiIaService, // SERVICION ADICIONAL PARA EVITAR ENROLLAMIENTO DE MODULOS
   ) {}
 
   /**
@@ -267,34 +270,48 @@ ${visionText}
     //Buscar contexto en base de conocimiento
     // const knChunks = await this.knowledgeService.search(empresa.id, texto, 7);
 
-    let knChunks: any[] = [];
-    try {
-      knChunks = await this.knowledgeService.search(empresa.id, texto, 7);
-    } catch (e) {
-      this.logger.warn(
-        'Fallo crítico en knowledgeService, continuando sin contexto.',
-      );
-      knChunks = [];
-    }
+    // let knChunks: any[] = [];
+    // try {
+    //   knChunks = await this.knowledgeService.search(empresa.id, texto, 7);
+    // } catch (e) {
+    //   this.logger.warn(
+    //     'Fallo crítico en knowledgeService, continuando sin contexto.',
+    //   );
+    //   knChunks = [];
+    // }
 
     // const contextText = knChunks;
 
-    const contextText = knChunks
-      .map(
-        (c, idx) =>
-          `#${idx + 1} [distance=${c.distance?.toFixed(4) ?? 'N/A'}] (${c.tipo}) ${c.titulo}:\n${c.texto}`,
-      )
-      .join('\n\n---\n\n');
+    // const contextText = knChunks
+    //   .map(
+    //     (c, idx) =>
+    //       `#${idx + 1} [distance=${c.distance?.toFixed(4) ?? 'N/A'}] (${c.tipo}) ${c.titulo}:\n${c.texto}`,
+    //   )
+    //   .join('\n\n---\n\n');
 
-    const imagenes = mediaUrl;
+    // const imagenes = mediaUrl;
 
     //  Pedir respuesta al modelo usando RAG
-    const reply = await this.fireworksIa.replyWithContext({
-      empresaNombre: empresa.nombre,
-      context: contextText,
-      historyText,
-      question: textWithMedia,
-    });
+    // const reply = await this.fireworksIa.replyWithContext({
+    //   empresaNombre: empresa.nombre,
+    //   context: contextText,
+    //   historyText,
+    //   question: textWithMedia,
+    // });
+
+    let reply = '';
+
+    try {
+      reply = await this.openIA.replyWithContext({
+        empresaNombre: empresa.nombre,
+        historyText,
+        question: textWithMedia,
+      });
+    } catch (e) {
+      this.logger.error('Error OpenAI', e);
+      reply =
+        'En este momento no puedo responder automáticamente. Un asesor te apoyará.';
+    }
 
     // SALIDA DEL BOT | USUARIO
 

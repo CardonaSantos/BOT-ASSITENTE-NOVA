@@ -7,6 +7,7 @@ import { FireworksIaService } from './app/fireworks-ia.service';
 import { PrismaModuleModule } from 'src/prisma/prisma-module/prisma-module.module';
 import { CrmService } from 'src/crm/app/crm.service';
 import { HttpModule } from '@nestjs/axios';
+import { OpenAiIaService } from './app/open-ia-rag.service';
 
 @Module({
   imports: [ConfigModule, PrismaModuleModule, HttpModule],

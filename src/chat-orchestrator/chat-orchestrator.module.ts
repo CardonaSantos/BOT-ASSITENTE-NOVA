@@ -13,9 +13,11 @@ import { BroadCastMessageService } from './app/broadcast-message.service';
 import { AgentChatController } from './presentation/agent-chat.controller';
 import { PrismaModuleModule } from 'src/prisma/prisma-module/prisma-module.module';
 import { SendHumanTextService } from './app/send-human-text.service';
+import { OpenAiModule } from 'src/fireworks-ia/open-ai.module';
 
 @Module({
   imports: [
+    OpenAiModule,
     PrismaModuleModule,
     EmpresaModule,
     ClienteModule,
