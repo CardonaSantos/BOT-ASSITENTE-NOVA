@@ -5,12 +5,16 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/prisma/prisma-service/prisma-service.service';
 import { ChatCompletionMessageParam } from 'openai/resources/index';
 
-import { ChatCompletionTool } from 'openai/resources/chat/completions';
+import {
+  ChatCompletionContentPart,
+  ChatCompletionTool,
+} from 'openai/resources/chat/completions';
 import { CrmService } from 'src/crm/app/crm.service';
+import { MANUAL_TEXTO } from '../manual';
 
 export const OPENAI_TOOLS: ChatCompletionTool[] = [
   {
-    type: 'function' as const,
+    type: 'function',
     function: {
       name: 'crear_ticket_soporte',
       description: 'Crea un ticket de soporte técnico en el CRM',
@@ -38,21 +42,18 @@ export class OpenAiIaService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly crmService: CrmService,
-
-    @Inject(OPENAI_CLIENT)
-    private readonly openai: OpenAI,
+    @Inject(OPENAI_CLIENT) private readonly openai: OpenAI,
   ) {}
 
   async replyWithContext(params: {
     empresaNombre: string;
-    historyText: string;
+    history: ChatCompletionMessageParam[];
     question: string;
     imageUrls?: string[];
     context?: string;
   }): Promise<string> {
-    const { empresaNombre, imageUrls, historyText, question, context } = params;
+    const { empresaNombre, imageUrls, history, question, context } = params;
 
-    // 1. Obtener configuración del Bot
     const botParams = await this.prisma.bot.findUnique({
       where: { id: 1 },
       select: {
@@ -64,44 +65,38 @@ export class OpenAiIaService {
       },
     });
 
-    if (!botParams) {
-      throw new Error('Configuración del bot no encontrada');
-    }
+    if (!botParams) throw new Error('Configuración del bot no encontrada');
 
     const temperature = botParams.temperature ?? 0.3;
     const maxTokens = botParams.maxCompletionTokens ?? 512;
     const model = this.config.get<string>('OPENAI_MODEL') ?? 'gpt-4o-mini';
 
-    // 2. Construir el System Prompt
-    // NOTA: Si usas Chat Completions, el 'vector_store' no funciona automático.
-    // Debes inyectar el contexto recuperado manualmente aquí (igual que en Fireworks).
+    // const contextSection = context
+    //   ? `\nINFORMACIÓN DE BASE DE CONOCIMIENTO:\n"""${context}"""\n`
+    //   : '';
+    // ${contextSection}
 
-    const contextSection = context
-      ? `\nINFORMACIÓN DE BASE DE CONOCIMIENTO:\n"""${context}"""\n`
-      : '';
+    const finalSystemPrompt = `
+      ${MANUAL_TEXTO || ''} 
 
-    const systemPrompt = `
-Eres el asistente virtual de soporte técnico de "${empresaNombre}".
+      ERES EL ASISTENTE DE: ${empresaNombre}
+      
+      ${botParams.systemPrompt ?? ''}
 
-REGLAS:
-- No menciones RAG, documentos ni fuentes internas.
-- No inventes información.
-- Sigue estrictamente los protocolos.
-- Usa funciones SOLO cuando corresponda.
+      INSTRUCCIONES DE FORMATO:
+      - Responde como un agente humano profesional.
+      - Sé breve y directo.
+      - NO uses Markdown (negritas, cursivas) ni listas complejas.
+      - Usa máximo 1 emoji por mensaje.
+    `.trim();
 
-${botParams.systemPrompt ?? ''}
-${contextSection}
-${historyText ? `HISTORIAL PREVIO:\n"""${historyText}"""\n${botParams.historyPrompt ?? ''}` : ''}
+    const userContentParts: ChatCompletionContentPart[] = [
+      { type: 'text', text: question },
+    ];
 
-FORMATO DE RESPUESTA:
-${botParams.outputStyle ?? 'Texto claro, profesional y humano'}
-`.trim();
-
-    const userContent: any[] = [{ type: 'text', text: question }];
-
-    if (imageUrls?.length) {
+    if (imageUrls && imageUrls.length > 0) {
       for (const url of imageUrls) {
-        userContent.push({
+        userContentParts.push({
           type: 'image_url',
           image_url: { url },
         });
@@ -109,93 +104,68 @@ ${botParams.outputStyle ?? 'Texto claro, profesional y humano'}
     }
 
     const messages: ChatCompletionMessageParam[] = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userContent },
+      { role: 'system', content: finalSystemPrompt },
+      ...history,
+      { role: 'user', content: userContentParts },
     ];
 
-    // 3. Preparar el historial de mensajes
-    //     const messages: ChatCompletionMessageParam[] = [
-    //       { role: 'system', content: systemPrompt },
-    //     //   { role: 'user', content: question },
-
-    //       {
-    //   role: 'user',
-    //   content: [
-    //     { type: 'text', text: question },
-    //     {
-    //       type: 'image_url',
-    //       image_url: { url: imageUrl }
-    //     }
-    //   ]
-    // }
-
-    //     ];
-
     try {
-      // --- PRIMERA LLAMADA A OPENAI ---
+      // --- PRIMERA LLAMADA ---
       const response = await this.openai.chat.completions.create({
         model,
         messages,
-        tools: OPENAI_TOOLS, // Solo tools tipo 'function'
+        tools: OPENAI_TOOLS,
         tool_choice: 'auto',
         temperature,
-        max_tokens: maxTokens, // Nota: en versiones nuevas es max_completion_tokens
+        max_tokens: maxTokens,
       });
 
       const responseMessage = response.choices[0].message;
 
-      // 4. Verificar si el modelo quiere ejecutar una función
       if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
         this.logger.log(
-          `🛠 El modelo solicita ejecutar ${responseMessage.tool_calls.length} herramientas`,
+          `🛠 Ejecutando ${responseMessage.tool_calls.length} herramientas`,
         );
 
-        // Es obligatorio agregar el mensaje del asistente con los tool_calls al historial
         messages.push(responseMessage);
 
-        // 5. Ejecutar las funciones solicitadas
         for (const toolCall of responseMessage.tool_calls) {
-          if (toolCall.type !== 'function') continue;
-
-          const { name, arguments: rawArgs } = toolCall.function;
-
-          if (name === 'crear_ticket_soporte') {
-            const args = JSON.parse(rawArgs);
-
-            let functionResponse = '';
+          if (
+            toolCall.type === 'function' &&
+            toolCall.function.name === 'crear_ticket_soporte'
+          ) {
+            const args = JSON.parse(toolCall.function.arguments);
+            let contentResult = '';
 
             try {
               const ticket = await this.crmService.create({
                 titulo: args.titulo,
                 descripcion: args.descripcion,
               });
-
-              functionResponse = JSON.stringify({
+              contentResult = JSON.stringify({
                 status: 'success',
                 ticket_id: ticket.id,
               });
             } catch (err) {
-              this.logger.error('Error creando ticket', err);
-              functionResponse = JSON.stringify({
+              this.logger.error('Error CRM', err);
+              contentResult = JSON.stringify({
                 status: 'error',
-                message: 'Error conectando con CRM',
+                message: 'Fallo al crear ticket',
               });
             }
 
             messages.push({
               role: 'tool',
               tool_call_id: toolCall.id,
-              content: functionResponse,
+              content: contentResult,
             });
           }
         }
 
-        // --- SEGUNDA LLAMADA (Para que el bot genere la respuesta final al usuario) ---
+        // --- SEGUNDA LLAMADA ---
         const finalResponse = await this.openai.chat.completions.create({
           model,
           messages,
-          // Opcional: puedes quitar las tools aquí si no quieres que llame a otra función encadenada
-          // tools: OPENAI_TOOLS,
           temperature,
           max_tokens: maxTokens,
         });
@@ -203,11 +173,10 @@ ${botParams.outputStyle ?? 'Texto claro, profesional y humano'}
         return finalResponse.choices[0].message.content ?? '';
       }
 
-      // Si no hubo tools, devolver respuesta normal
       return responseMessage.content ?? '';
     } catch (error) {
-      this.logger.error('Error en llamada a OpenAI', error);
-      throw error;
+      this.logger.error('Error OpenAiService', error);
+      return 'Lo siento, tuve un error interno procesando tu solicitud.';
     }
   }
 }

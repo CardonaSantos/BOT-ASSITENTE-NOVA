@@ -160,39 +160,44 @@ export class ChatOrchestratorService {
     const mediaUrls: string[] = [];
 
     if (media?.mediaId) {
-      const { buffer, meta } = await this.metaWhatsappMedia.fetchMedia(
-        media.mediaId,
-      );
+      try {
+        const { buffer, meta } = await this.metaWhatsappMedia.fetchMedia(
+          media.mediaId,
+        );
 
-      mediaMimeType =
-        meta.mime_type ?? media.mimeType ?? 'application/octet-stream';
-      mediaSha256 = meta.sha256 ?? null;
+        mediaMimeType =
+          meta.mime_type ?? media.mimeType ?? 'application/octet-stream';
+        mediaSha256 = meta.sha256 ?? null;
 
-      const ext =
-        media.extension ??
-        extFromFilename(media.filename) ??
-        extFromMime(mediaMimeType) ??
-        'bin';
+        const ext =
+          media.extension ??
+          extFromFilename(media.filename) ??
+          extFromMime(mediaMimeType) ??
+          'bin';
 
-      const key = generarKeyWhatsapp({
-        empresaId: empresa.id,
-        clienteId: cliente.id,
-        sessionId: session.id!,
-        wamid,
-        tipo: media.kind,
-        direction: params.direction, // INBOUND
-        extension: ext,
-        basePrefix: 'crm',
-      });
+        const key = generarKeyWhatsapp({
+          empresaId: empresa.id,
+          clienteId: cliente.id,
+          sessionId: session.id!,
+          wamid,
+          tipo: media.kind,
+          direction: params.direction, // INBOUND
+          extension: ext,
+          basePrefix: 'crm',
+        });
 
-      const uploaded = await this.cloudStorageDoSpaces.uploadBuffer({
-        buffer,
-        contentType: mediaMimeType,
-        key,
-        publicRead: true,
-      });
+        const uploaded = await this.cloudStorageDoSpaces.uploadBuffer({
+          buffer,
+          contentType: mediaMimeType,
+          key,
+          publicRead: true,
+        });
 
-      mediaUrl = uploaded.url ?? uploaded.url ?? null;
+        mediaUrl = uploaded.url ?? uploaded.url ?? null;
+      } catch (error) {
+        this.logger.error('Error subiendo imagen, continuando sin ella', error);
+        mediaUrl = null;
+      }
     }
 
     if (mediaUrl) {
@@ -254,15 +259,25 @@ export class ChatOrchestratorService {
     // PREPARACION DE RESPONSE DEL MODELO
 
     //  Historial
+    // const history = await this.chatService.getLastMessages(session.id!);
+    // // SEPARAR Y DIFERENCIAR ENTRE MENSAJE DEL USUARIO Y BOT
+    // const historyText = history
+    //   .map((m) =>
+    //     m.rol === ChatRole.USER
+    //       ? `Usuario: ${m.contenido}`
+    //       : `Bot: ${m.contenido}`,
+    //   )
+    //   .join('\n');
+
     const history = await this.chatService.getLastMessages(session.id!);
-    // SEPARAR Y DIFERENCIAR ENTRE MENSAJE DEL USUARIO Y BOT
-    const historyText = history
-      .map((m) =>
-        m.rol === ChatRole.USER
-          ? `Usuario: ${m.contenido}`
-          : `Bot: ${m.contenido}`,
-      )
-      .join('\n');
+
+    // 2. CONVERTIR A FORMATO OPENAI (Array de objetos)
+    // En lugar de hacer .join('\n'), mapeamos a objetos { role, content }
+    const formattedHistory = history.map((m) => ({
+      role:
+        m.rol === ChatRole.USER ? ('user' as const) : ('assistant' as const),
+      content: m.contenido ?? '', // Protección contra nulos
+    }));
 
     //Buscar contexto en base de conocimiento
     // const knChunks = await this.knowledgeService.search(empresa.id, texto, 7);
@@ -296,12 +311,28 @@ export class ChatOrchestratorService {
     //   question: textWithMedia,
     // });
 
+    // let reply = '';
+
+    // try {
+    //   reply = await this.openIA.replyWithContext({
+    //     empresaNombre: empresa.nombre,
+    //     historyText,
+    //     question: textWithMedia,
+    //     imageUrls: mediaUrls,
+    //   });
+    // } catch (e) {
+    //   this.logger.error('Error OpenAI', e);
+    //   reply =
+    //     'En este momento no puedo responder automáticamente. Un asesor te apoyará.';
+    // }
+
     let reply = '';
 
     try {
+      // 3. LLAMADA AL SERVICIO ACTUALIZADA
       reply = await this.openIA.replyWithContext({
         empresaNombre: empresa.nombre,
-        historyText,
+        history: formattedHistory, // <--- Enviamos el Array, ya no "historyText"
         question: textWithMedia,
         imageUrls: mediaUrls,
       });
