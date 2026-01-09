@@ -189,25 +189,28 @@ export class OpenAiIaService {
                 break;
 
               case 'buscar_producto_en_pos':
-                this.logger.debug(`Ejecutando funcion: ${functionName}`);
-                this.logger.log(
-                  `Args funcion para POS: \n${JSON.stringify(functionArgs, null, 2)}`,
+                this.logger.debug(
+                  `############Ejecutando funcion######: ${functionName}`,
                 );
 
                 const dto = {
                   producto: functionArgs.producto,
-                  categorias: functionArgs.categorias,
+                  categorias: functionArgs.categorias ?? [],
                 };
+
+                this.logger.log(
+                  `DTO enviado al ERP: \n${JSON.stringify(dto, null, 2)}`,
+                );
+
                 const productos_found = await this.pos_erp_Service.search(dto);
-                toolResultContent = JSON.stringify({
+                messages.push({
                   role: 'tool',
                   tool_call_id: toolCall.id,
                   content: JSON.stringify(productos_found),
                 });
 
                 this.logger.log(
-                  'Los resultados del pos son: ',
-                  productos_found,
+                  `PRODUCTOS FOUND: \n${JSON.stringify(productos_found, null, 2)}`,
                 );
 
                 break;
