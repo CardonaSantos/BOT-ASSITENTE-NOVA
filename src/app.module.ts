@@ -16,6 +16,7 @@ import { BotModule } from './bot/bot.module';
 import { CloudStorageDoSpacesModule } from './cloud-storage-dospaces/cloud-storage-dospaces.module';
 import { WhatsappMessageModule } from './whatsapp/chat/chat.module';
 import { CrmModule } from './crm/crm.module';
+import { PosFunctionsModule } from './pos-functions/pos-functions.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { CrmModule } from './crm/crm.module';
     BotModule,
     CloudStorageDoSpacesModule,
     CrmModule,
+    PosFunctionsModule,
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService],

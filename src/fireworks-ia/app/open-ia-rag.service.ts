@@ -9,6 +9,7 @@ import {
   ChatCompletionTool,
 } from 'openai/resources/chat/completions';
 import { CrmService } from 'src/crm/app/crm.service';
+import { PosFunctionsService } from 'src/pos-functions/app/pos-functions.service';
 
 export const OPENAI_TOOLS: ChatCompletionTool[] = [
   // CREACION DE TICKET DE SOPORTE TECNICO
@@ -37,7 +38,7 @@ export const OPENAI_TOOLS: ChatCompletionTool[] = [
     function: {
       name: 'buscar_producto_en_pos',
       description:
-        'Busca productos en el inventario del POS para verificar stock, precios o existencia. Úsala cuando el cliente pregunte por disponibilidad de artículos, o pregunte si tenemos algun producto en tiendas.',
+        'Consulta el inventario del POS en tiempo real. Úsala cuando el cliente pregunte por precios, stock o disponibilidad de un producto. Retorna coincidencias con stock desglosado por sucursal. Informa al cliente explícitamente en qué sucursal hay unidades disponibles.',
       parameters: {
         type: 'object',
         properties: {
@@ -47,12 +48,10 @@ export const OPENAI_TOOLS: ChatCompletionTool[] = [
               'Término de búsqueda principal (nombre del producto). Convertir a minúsculas. Ej: "galaxy s24", "funda", "cargador".',
           },
           categorias: {
-            type: 'array', //estructura de dato
-            items: {
-              type: 'string', // tipo de dato
-            },
+            type: 'array',
+            items: { type: 'string' },
             description:
-              'Lista de marcas o categorías mencionadas explícitamente. Ej: Si busca "Teléfonos Samsung", aqui va ["samsung"]. Si busca "Iphone", aqui va ["apple", "iphone"].',
+              'Lista de marcas o categorías mencionadas. Ej: Si busca "Teléfonos Samsung", aqui va ["samsung"].',
           },
         },
         required: ['producto'],
@@ -70,6 +69,8 @@ export class OpenAiIaService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly crmService: CrmService,
+    private readonly pos_erp_Service: PosFunctionsService,
+
     @Inject(OPENAI_CLIENT) private readonly openai: OpenAI,
   ) {}
 
@@ -189,20 +190,26 @@ export class OpenAiIaService {
 
               case 'buscar_producto_en_pos':
                 this.logger.debug(`Ejecutando funcion: ${functionName}`);
-                // Sintaxis: JSON.stringify(objeto, replacer, espacios)
                 this.logger.log(
                   `Args funcion para POS: \n${JSON.stringify(functionArgs, null, 2)}`,
                 );
-                // Ahora sí functionArgs es un objeto
-                // const productos_pos = await this.crmService.create({
-                //   titulo: functionArgs.titulo,
-                //   descripcion: functionArgs.descripcion,
-                // });
-                // toolResultContent = JSON.stringify({
-                //   status: 'success',
-                //   ticket_id: ticket.id,
-                //   msg: 'Ticket creado',
-                // });
+
+                const dto = {
+                  producto: functionArgs.producto,
+                  categorias: functionArgs.categorias,
+                };
+                const productos_found = await this.pos_erp_Service.search(dto);
+                toolResultContent = JSON.stringify({
+                  role: 'tool',
+                  tool_call_id: toolCall.id,
+                  content: JSON.stringify(productos_found),
+                });
+
+                this.logger.log(
+                  'Los resultados del pos son: ',
+                  productos_found,
+                );
+
                 break;
 
               default:

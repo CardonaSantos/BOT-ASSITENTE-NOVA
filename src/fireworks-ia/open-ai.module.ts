@@ -7,9 +7,10 @@ import { OPENAI_CLIENT } from './infraestructure/open-ia.client';
 import { CrmService } from 'src/crm/app/crm.service';
 import { HttpModule } from '@nestjs/axios';
 import { CrmModule } from 'src/crm/crm.module';
+import { PosFunctionsModule } from 'src/pos-functions/pos-functions.module';
 
 @Module({
-  imports: [ConfigModule, PrismaModuleModule, CrmModule],
+  imports: [ConfigModule, PrismaModuleModule, CrmModule, PosFunctionsModule],
   providers: [
     {
       provide: OPENAI_CLIENT,
