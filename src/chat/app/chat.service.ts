@@ -88,6 +88,10 @@ export class ChatService {
     return this.messageRepo.create(message);
   }
 
+  async addMediaUrlToMessage(messageId: number, mediaUrl: string) {
+    return await this.messageRepo.addMediaUrlToMessage(messageId, mediaUrl);
+  }
+
   async getMessages(sessionId: number): Promise<ChatMessage[]> {
     return this.messageRepo.findBySession(sessionId);
   }

@@ -8,6 +8,7 @@ export class ChatMessage {
     public rol: ChatRole,
     public contenido: string,
     public tokens: number | null,
+    public mediaUrl: string | null,
     public readonly creadoEn?: Date,
     public readonly actualizadoEn?: Date,
   ) {}
@@ -17,6 +18,8 @@ export class ChatMessage {
     rol: ChatRole;
     contenido: string;
     tokens?: number | null;
+
+    mediaUrl?: string | null;
   }): ChatMessage {
     return new ChatMessage(
       null,
@@ -24,6 +27,7 @@ export class ChatMessage {
       props.rol,
       props.contenido,
       props.tokens ?? null,
+      props.mediaUrl,
     );
   }
 }

@@ -114,6 +114,10 @@ export class FireworksIaService {
     const presence_penalty = botParams.presencePenalty ?? 0;
     const frequency_penalty = botParams.frequencyPenalty ?? 0.2;
     const max_completion_tokens = botParams.maxCompletionTokens ?? 512;
+    const contextPrompt = botParams.contextPrompt ?? 512;
+    const outputStyle = botParams.outputStyle ?? 512;
+
+    const systemPrompt = botParams.systemPrompt ?? 'Se amable';
 
     const contextSection =
       context && context.trim().length > 0
@@ -126,7 +130,7 @@ ${context}
 """
 
 Instrucciones específicas para usar el contexto:
-${botParams.contextPrompt ?? 'No inventes datos que no aparezcan explícitamente en el contexto. Si no encuentras la información, dilo claramente.'}
+${contextPrompt ?? 'No inventes datos que no aparezcan explícitamente en el contexto. Si no encuentras la información, dilo claramente.'}
 `
         : `### CONTEXTO
 
@@ -150,13 +154,13 @@ No hay historial reciente. Trata este mensaje como el inicio de una nueva conver
 
     const outputSection = `### ESTILO Y FORMATO DE RESPUESTA
 
-${botParams.outputStyle ?? 'Responde en texto plano, claro, amable y profesional.'}`;
+${outputStyle ?? 'Responde en texto plano, claro, amable y profesional.'}`;
 
     const baseSystemPrompt = `
 Eres el asistente virtual de soporte al cliente y agente del CRM de la empresa "${empresaNombre}".
 
 Instrucciones base del sistema:
-${botParams.systemPrompt ?? 'Sé amable, claro y útil. Responde siempre en español neutro.'}
+${systemPrompt ?? 'Sé amable, claro y útil. Responde siempre en español neutro.'}
 
 ${contextSection}
 
@@ -184,6 +188,9 @@ ${outputSection}
       tool_choice: 'auto',
       max_completion_tokens: botParams.maxCompletionTokens ?? 512,
       temperature: botParams.temperature ?? 0.3,
+      presence_penalty: presence_penalty,
+      frequency_penalty: frequency_penalty,
+      top_p: top_p,
     });
 
     this.logger.debug(
@@ -217,7 +224,7 @@ ${outputSection}
             this.logger.log(`Argumentos recibidos: ${JSON.stringify(args)}`);
 
             const ticketDto: CreateCrmDto = {
-              titulo: args.titulo || 'Ticket generado por Nuvia', // Fallback por seguridad
+              titulo: args.titulo || 'Ticket generado por Nuvia',
               descripcion: args.descripcion || 'Sin descripción proporcionada',
             };
 

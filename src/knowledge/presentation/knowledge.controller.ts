@@ -31,6 +31,11 @@ export class KnowledgeController {
     return this.knowledgeService.findAllByEmpresa(empresaId);
   }
 
+  @Get('for-llm')
+  async findAllKnowledgeForLLM() {
+    return await this.knowledgeService.getManuals();
+  }
+
   @Get('')
   findAllKnowledge() {
     return this.knowledgeService.findAllKnowledge();

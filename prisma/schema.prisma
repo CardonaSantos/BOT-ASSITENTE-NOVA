@@ -16,6 +16,8 @@ enum KnowledgeDocumentType {
   PLAN
   TICKET
   COBRO
+  PROTOCOLO
+  FUNCION
   OTRO
 }
 
@@ -203,6 +205,8 @@ model ChatMessage {
   contenido  String
   tokens     Int?
 
+  mediaUrl   String?
+
   creadoEn   DateTime    @default(now())
   actualizadoEn DateTime         @updatedAt
 
@@ -230,6 +234,8 @@ model KnowledgeDocument {
   actualizadoEn DateTime            @updatedAt
 
   chunks      KnowledgeChunk[]
+
+  activo      Boolean @default(true) 
 
   @@index([empresaId, tipo])
 }

@@ -3,10 +3,8 @@ import { KnowledgeRepository } from '../domain/knowledge.repository';
 import { Knowledge } from '../entities/knowledge.entity';
 import { throwFatalError } from 'src/Utils/CommonFatalError';
 import { PrismaService } from 'src/prisma/prisma-service/prisma-service.service';
-import { KnowledgeDocument } from '@prisma/client';
-import { splitText } from 'src/Utils/splitterText';
+import { KnowledgeDocument, KnowledgeDocumentType } from '@prisma/client';
 import { FireworksIaService } from 'src/fireworks-ia/app/fireworks-ia.service';
-import { splitTextRag } from '../splitTest';
 
 @Injectable()
 export class PrismaKnowledgeRepository implements KnowledgeRepository {
@@ -15,7 +13,7 @@ export class PrismaKnowledgeRepository implements KnowledgeRepository {
   constructor(
     private readonly prisma: PrismaService,
 
-    private readonly fireworksIa: FireworksIaService,
+    // private readonly fireworksIa: FireworksIaService,
   ) {}
 
   // Mapea fila de Prisma -> Entidad de dominio
@@ -45,10 +43,10 @@ export class PrismaKnowledgeRepository implements KnowledgeRepository {
       }
 
       // 1) Chunks a partir de textoLargo
-      const chunks = splitText(knowledge.textoLargo);
+      // const chunks = splitText(knowledge.textoLargo);
 
       // 2) Embeddings (modelo transformador)
-      const embeddings = await this.fireworksIa.embedMany(chunks);
+      // const embeddings = await this.fireworksIa.embedMany(chunks);
 
       // 3) Crear KnowledgeDocument (guardamos resumen + textoLargo completo)
       const row = await this.prisma.knowledgeDocument.create({
@@ -64,7 +62,7 @@ export class PrismaKnowledgeRepository implements KnowledgeRepository {
       });
 
       // 4) Insertar chunks + embeddings
-      await this.insertChunks(row.id, chunks, embeddings);
+      // await this.insertChunks(row.id, chunks, embeddings);
 
       const domain = this.toDomain(row);
       if (!domain) {
@@ -136,12 +134,10 @@ export class PrismaKnowledgeRepository implements KnowledgeRepository {
           throw new Error(`KnowledgeDocument ${id} no encontrado`);
         }
 
-        // ¿Cambió el texto largo?
-        const textoCambio =
-          typeof data.textoLargo === 'string' &&
-          data.textoLargo.trim() !== existing.textoLargo?.trim();
+        // const textoCambio =
+        //   typeof data.textoLargo === 'string' &&
+        //   data.textoLargo.trim() !== existing.textoLargo?.trim();
 
-        // 1️⃣ Update del documento
         const updated = await tx.knowledgeDocument.update({
           where: { id },
           data: {
@@ -155,60 +151,55 @@ export class PrismaKnowledgeRepository implements KnowledgeRepository {
           },
         });
 
-        // 2️⃣ Si cambió el texto → REINDEXAR
-        if (textoCambio) {
-          // borrar chunks viejos
-          await tx.knowledgeChunk.deleteMany({
-            where: { documentId: id },
-          });
+        // if (textoCambio) {
+        //   await tx.knowledgeChunk.deleteMany({
+        //     where: { documentId: id },
+        //   });
 
-          // nuevo chunking
-          const chunks = splitTextRag(data.textoLargo!);
+        //   const chunks = splitTextRag(data.textoLargo!);
 
-          this.logger.log(
-            `Reindexando knowledge ${id} con ${chunks.length} chunks`,
-          );
+        //   this.logger.log(
+        //     `Reindexando knowledge ${id} con ${chunks.length} chunks`,
+        //   );
 
-          if (chunks.length === 0) {
-            throw new Error('No se generaron chunks válidos al actualizar');
-          }
+        //   if (chunks.length === 0) {
+        //     throw new Error('No se generaron chunks válidos al actualizar');
+        //   }
 
-          // embeddings en batches
-          const embeddings: number[][] = [];
-          for (let i = 0; i < chunks.length; i += 8) {
-            const batch = chunks.slice(i, i + 8);
-            const batchEmbeddings = await this.fireworksIa.embedMany(batch);
-            embeddings.push(...batchEmbeddings);
-          }
+        //   const embeddings: number[][] = [];
+        //   for (let i = 0; i < chunks.length; i += 8) {
+        //     const batch = chunks.slice(i, i + 8);
+        //     const batchEmbeddings = await this.fireworksIa.embedMany(batch);
+        //     embeddings.push(...batchEmbeddings);
+        //   }
 
-          if (chunks.length !== embeddings.length) {
-            throw new Error(
-              `Mismatch chunks (${chunks.length}) vs embeddings (${embeddings.length})`,
-            );
-          }
+        //   if (chunks.length !== embeddings.length) {
+        //     throw new Error(
+        //       `Mismatch chunks (${chunks.length}) vs embeddings (${embeddings.length})`,
+        //     );
+        //   }
 
-          // insertar nuevos chunks
-          for (let i = 0; i < chunks.length; i++) {
-            const texto = chunks[i];
-            const embedding = embeddings[i];
-            const tokensApprox = Math.round(texto.length / 4);
+        //   for (let i = 0; i < chunks.length; i++) {
+        //     const texto = chunks[i];
+        //     const embedding = embeddings[i];
+        //     const tokensApprox = Math.round(texto.length / 4);
 
-            await tx.$executeRaw`
-            INSERT INTO "KnowledgeChunk"
-              ("documentId", "indice", "texto", "embedding", "tokens", "creadoEn", "actualizadoEn")
-            VALUES
-              (
-                ${id},
-                ${i},
-                ${texto},
-                ${JSON.stringify(embedding)}::vector,
-                ${tokensApprox},
-                NOW(),
-                NOW()
-              )
-          `;
-          }
-        }
+        //     await tx.$executeRaw`
+        //     INSERT INTO "KnowledgeChunk"
+        //       ("documentId", "indice", "texto", "embedding", "tokens", "creadoEn", "actualizadoEn")
+        //     VALUES
+        //       (
+        //         ${id},
+        //         ${i},
+        //         ${texto},
+        //         ${JSON.stringify(embedding)}::vector,
+        //         ${tokensApprox},
+        //         NOW(),
+        //         NOW()
+        //       )
+        //   `;
+        //   }
+        // }
 
         return this.toDomain(updated)!;
       });
@@ -266,6 +257,66 @@ export class PrismaKnowledgeRepository implements KnowledgeRepository {
         this.logger,
         'PrismaKnowledgeRepository - insertChunks',
       );
+    }
+  }
+
+  // En tu knowledge.service.ts
+
+  async getAllKnowledge(): Promise<string> {
+    const KNOWLEDGE_TYPE_ORDER: Record<KnowledgeDocumentType, number> = {
+      FAQ: 1,
+      PROTOCOLO: 2,
+      PLAN: 3,
+      FUNCION: 4,
+      DOCUMENTO: 5,
+      CONTRATO: 6,
+      COBRO: 7,
+      TICKET: 8,
+      OTRO: 99,
+    };
+
+    try {
+      const docs = await this.prisma.knowledgeDocument.findMany({
+        where: {
+          activo: true,
+        },
+        select: {
+          titulo: true,
+          descripcion: true,
+          textoLargo: true,
+          tipo: true,
+        },
+        orderBy: {
+          actualizadoEn: 'desc',
+        },
+      });
+
+      if (docs.length === 0) return '';
+
+      return [
+        '## 📚 BASE DE CONOCIMIENTO',
+        '',
+        ...docs
+          .sort(
+            (a, b) =>
+              KNOWLEDGE_TYPE_ORDER[a.tipo] - KNOWLEDGE_TYPE_ORDER[b.tipo],
+          )
+          .map((doc) =>
+            `
+### 📌 TIPO: ${doc.tipo}
+#### TEMA: ${doc.titulo}
+
+**DESCRIPCIÓN**
+${doc.descripcion || 'Sin descripción.'}
+
+**CONTENIDO**
+${doc.textoLargo || 'Sin contenido.'}
+`.trim(),
+          ),
+      ].join('\n\n---\n\n');
+    } catch (error) {
+      this.logger.error('Error obteniendo knowledge base', error);
+      return '';
     }
   }
 }

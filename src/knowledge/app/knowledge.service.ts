@@ -1,4 +1,3 @@
-// src/knowledge/app/knowledge.service.ts
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma-service/prisma-service.service';
 import { KnowledgeDocumentType } from '@prisma/client';
@@ -111,7 +110,6 @@ export class KnowledgeService {
   // ----------------------------
   // BÚSQUEDA VECTORIAL
   // ----------------------------
-  // En knowledge.service.ts
 
   async search(
     empresaId: number,
@@ -164,6 +162,10 @@ export class KnowledgeService {
       );
       return [];
     }
+  }
+
+  async getManuals(): Promise<any> {
+    return await this.repo.getAllKnowledge();
   }
 
   async findAllKnowledge() {

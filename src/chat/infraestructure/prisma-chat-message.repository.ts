@@ -20,6 +20,7 @@ export class PrismaChatMessageRepository implements ChatMessageRepository {
       row.rol,
       row.contenido,
       row.tokens,
+      row.mediaUrl,
       row.creadoEn,
       row.actualizadoEn,
     );
@@ -33,6 +34,7 @@ export class PrismaChatMessageRepository implements ChatMessageRepository {
           rol: m.rol as ChatRole,
           contenido: m.contenido,
           tokens: m.tokens,
+          mediaUrl: m.mediaUrl,
         },
       });
 
@@ -43,6 +45,25 @@ export class PrismaChatMessageRepository implements ChatMessageRepository {
         this.logger,
         'Chat - PrismaChatMessageRepository.create',
       );
+    }
+  }
+
+  async addMediaUrlToMessage(messageId: number, mediaUrl: string) {
+    try {
+      if (!mediaUrl) return; // Si no hay URL, no actualizamos nada
+
+      const message = await this.prisma.chatMessage.update({
+        where: {
+          id: messageId,
+        },
+        data: {
+          mediaUrl: mediaUrl,
+        },
+      });
+      this.logger.log('Mensaje con imagen actualizada');
+      return this.toDomain(message);
+    } catch (error) {
+      this.logger.error('el error es: ', error);
     }
   }
 

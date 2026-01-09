@@ -11,4 +11,9 @@ export interface ChatMessageRepository {
   markChatAsRead(clienteId: number): void;
 
   removeAllMessages(clienteId: number): Promise<void>;
+
+  addMediaUrlToMessage(
+    messageId: number,
+    mediaUrl: string,
+  ): Promise<ChatMessage>;
 }

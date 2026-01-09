@@ -10,4 +10,6 @@ export interface KnowledgeRepository {
   findAllByEmpresa(empresaId: number): Promise<Knowledge[]>;
 
   findAll(): Promise<Knowledge[]>;
+
+  getAllKnowledge(): Promise<string>;
 }

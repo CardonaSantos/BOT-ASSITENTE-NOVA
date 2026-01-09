@@ -28,6 +28,7 @@ import * as isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
 import * as customParseFormat from 'dayjs/plugin/customParseFormat';
 import { TZGT } from 'src/Utils/TZGT';
 import { OpenAiIaService } from 'src/fireworks-ia/app/open-ia-rag.service';
+import { ChatCompletionMessageParam } from 'openai/resources/index';
 dayjs.extend(customParseFormat);
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -72,16 +73,12 @@ export class ChatOrchestratorService {
     private readonly clienteService: ClienteService, // CLIENTES -> ORQUESTADOR
     private readonly chatService: ChatService, // SESIONES CHAT BOT -> ORQUESTADOR
     private readonly knowledgeService: KnowledgeService, // CONOCIMIENTO RAG
-    private readonly fireworksIa: FireworksIaService, // FIREWORKS-IA CEREBRO
-
+    // private readonly fireworksIa: FireworksIaService, // FIREWORKS-IA CEREBRO
     private readonly whatsappMessage: WhatsAppMessageService, // WHATSAPP MESSAGE SERVICE -> ORQUESTADOR DE MENSAJES
     private readonly metaWhatsappMedia: MetaWhatsAppMediaService, // DESCARGADOR DE MEDIA
-
     private readonly cloudStorageDoSpaces: CloudStorageService, // ALMACENAMIENTO BUCKET DO3
     private readonly whatsappApiMetaService: WhatsappApiMetaService, // SERVICION ADICIONAL PARA EVITAR ENROLLAMIENTO DE MODULOS
-
     private readonly broadcast: BroadCastMessageService, // SERVICION ADICIONAL PARA EVITAR ENROLLAMIENTO DE MODULOS
-
     private readonly openIA: OpenAiIaService, // SERVICION ADICIONAL PARA EVITAR ENROLLAMIENTO DE MODULOS
   ) {}
 
@@ -138,7 +135,6 @@ export class ChatOrchestratorService {
     const isDesactivated = !cliente.botActivo;
 
     // PREPARAR TODO
-    //  Sesión
     const session = await this.chatService.ensureOpenSession({
       empresaId: empresa.id,
       clienteId: cliente.id,
@@ -169,11 +165,7 @@ export class ChatOrchestratorService {
           meta.mime_type ?? media.mimeType ?? 'application/octet-stream';
         mediaSha256 = meta.sha256 ?? null;
 
-        const ext =
-          media.extension ??
-          extFromFilename(media.filename) ??
-          extFromMime(mediaMimeType) ??
-          'bin';
+        const ext = media.extension ?? extFromMime(mediaMimeType) ?? 'bin';
 
         const key = generarKeyWhatsapp({
           empresaId: empresa.id,
@@ -181,7 +173,7 @@ export class ChatOrchestratorService {
           sessionId: session.id!,
           wamid,
           tipo: media.kind,
-          direction: params.direction, // INBOUND
+          direction: params.direction,
           extension: ext,
           basePrefix: 'crm',
         });
@@ -193,9 +185,10 @@ export class ChatOrchestratorService {
           publicRead: true,
         });
 
-        mediaUrl = uploaded.url ?? uploaded.url ?? null;
+        mediaUrl = uploaded.url ?? null;
+        await this.chatService.addMediaUrlToMessage(userMessage.id, mediaUrl);
       } catch (error) {
-        this.logger.error('Error subiendo imagen, continuando sin ella', error);
+        this.logger.error('Error procesando imagen (S3/Fetch)', error);
         mediaUrl = null;
       }
     }
@@ -204,16 +197,7 @@ export class ChatOrchestratorService {
       mediaUrls.push(mediaUrl);
     }
 
-    let visionText = '';
-
     const textWithMedia = texto;
-    //      visionText
-    //       ? `${texto}
-
-    // [DATOS EXTRAÍDOS AUTOMÁTICAMENTE DE IMÁGENES]
-    // ${visionText}
-    // [FIN DE DATOS EXTRAÍDOS]`
-    //       : texto;
 
     // ENTRADA DEL CLIENTE
     const isboundMsg = await this.whatsappMessage.upsertByWamid({
@@ -256,93 +240,65 @@ export class ChatOrchestratorService {
       return { status: 'saved_silent', userMessage };
     }
 
-    // PREPARACION DE RESPONSE DEL MODELO
-
-    //  Historial
-    // const history = await this.chatService.getLastMessages(session.id!);
-    // // SEPARAR Y DIFERENCIAR ENTRE MENSAJE DEL USUARIO Y BOT
-    // const historyText = history
-    //   .map((m) =>
-    //     m.rol === ChatRole.USER
-    //       ? `Usuario: ${m.contenido}`
-    //       : `Bot: ${m.contenido}`,
-    //   )
-    //   .join('\n');
-
     const history = await this.chatService.getLastMessages(session.id!);
 
-    // 2. CONVERTIR A FORMATO OPENAI (Array de objetos)
-    // En lugar de hacer .join('\n'), mapeamos a objetos { role, content }
-    const formattedHistory = history.map((m) => ({
-      role:
-        m.rol === ChatRole.USER ? ('user' as const) : ('assistant' as const),
-      content: m.contenido ?? '', // Protección contra nulos
-    }));
+    const formattedHistory: ChatCompletionMessageParam[] = history.map((m) => {
+      const role =
+        m.rol === ChatRole.USER ? ('user' as const) : ('assistant' as const);
 
-    //Buscar contexto en base de conocimiento
-    // const knChunks = await this.knowledgeService.search(empresa.id, texto, 7);
+      // A. Si es el BOT
+      if (role === 'assistant') {
+        return {
+          role,
+          content: m.contenido ?? '',
+        };
+      }
 
-    // let knChunks: any[] = [];
-    // try {
-    //   knChunks = await this.knowledgeService.search(empresa.id, texto, 7);
-    // } catch (e) {
-    //   this.logger.warn(
-    //     'Fallo crítico en knowledgeService, continuando sin contexto.',
-    //   );
-    //   knChunks = [];
-    // }
+      // B. Si es USUARIO, verificamos si tenía foto guardada
+      if (role === 'user') {
+        if (m.mediaUrl) {
+          return {
+            role,
+            content: [
+              { type: 'text', text: m.contenido ?? '' }, //  (caption)
+              {
+                type: 'image_url',
+                image_url: {
+                  url: m.mediaUrl,
+                  detail: 'auto',
+                },
+              },
+            ],
+          };
+        }
 
-    // const contextText = knChunks;
+        // Opción B2: Solo texto
+        return {
+          role,
+          content: m.contenido ?? '',
+        };
+      }
 
-    // const contextText = knChunks
-    //   .map(
-    //     (c, idx) =>
-    //       `#${idx + 1} [distance=${c.distance?.toFixed(4) ?? 'N/A'}] (${c.tipo}) ${c.titulo}:\n${c.texto}`,
-    //   )
-    //   .join('\n\n---\n\n');
-
-    // const imagenes = mediaUrl;
-
-    //  Pedir respuesta al modelo usando RAG
-    // const reply = await this.fireworksIa.replyWithContext({
-    //   empresaNombre: empresa.nombre,
-    //   context: contextText,
-    //   historyText,
-    //   question: textWithMedia,
-    // });
-
-    // let reply = '';
-
-    // try {
-    //   reply = await this.openIA.replyWithContext({
-    //     empresaNombre: empresa.nombre,
-    //     historyText,
-    //     question: textWithMedia,
-    //     imageUrls: mediaUrls,
-    //   });
-    // } catch (e) {
-    //   this.logger.error('Error OpenAI', e);
-    //   reply =
-    //     'En este momento no puedo responder automáticamente. Un asesor te apoyará.';
-    // }
+      // Fallback
+      return { role: 'user', content: '' };
+    });
 
     let reply = '';
-
+    const manual = await this.knowledgeService.getManuals();
     try {
-      // 3. LLAMADA AL SERVICIO ACTUALIZADA
+      // LLAMADA AL SERVICIO ACTUALIZADA
       reply = await this.openIA.replyWithContext({
         empresaNombre: empresa.nombre,
-        history: formattedHistory, // <--- Enviamos el Array, ya no "historyText"
+        history: formattedHistory,
         question: textWithMedia,
         imageUrls: mediaUrls,
+        manual: manual,
       });
     } catch (e) {
       this.logger.error('Error OpenAI', e);
       reply =
         'En este momento no puedo responder automáticamente. Un asesor te apoyará.';
     }
-
-    // SALIDA DEL BOT | USUARIO
 
     const botMessage = await this.chatService.addMessage({
       sessionId: session.id!,
