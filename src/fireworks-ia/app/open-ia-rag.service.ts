@@ -83,6 +83,9 @@ export class OpenAiIaService {
   }): Promise<string> {
     const { empresaNombre, imageUrls, history, question, manual } = params;
 
+    // ========================
+    // 1. CARGAR CONFIGURACIÓN
+    // ========================
     const botParams = await this.prisma.bot.findUnique({
       where: { id: 1 },
       select: {
@@ -95,35 +98,44 @@ export class OpenAiIaService {
       },
     });
 
-    if (!botParams) throw new Error('Configuración del bot no encontrada');
-
-    const temperature = botParams.temperature ?? 0.3; // Rango: 0 a 2
-    const maxTokens = botParams.maxCompletionTokens ?? 512;
-    const topP = botParams.topP ?? 1.0; // Rango: 0 a 1 (Default 1)
-    const frequencyPenalty = botParams.frequencyPenalty ?? 0; // Rango: -2 a 2 (Default 0)
-    const presencePenalty = botParams.presencePenalty ?? 0; // Rango: -2 a 2 (Default 0)
+    if (!botParams) {
+      this.logger.error('Configuración del bot no encontrada en BD');
+      return 'Configuración del asistente no disponible en este momento.';
+    }
 
     const model = this.config.get<string>('OPENAI_MODEL') ?? 'gpt-4o-mini';
 
+    const temperature = botParams.temperature ?? 0.3;
+    const maxTokens = botParams.maxCompletionTokens ?? 512;
+    const topP = botParams.topP ?? 1.0;
+    const frequencyPenalty = botParams.frequencyPenalty ?? 0;
+    const presencePenalty = botParams.presencePenalty ?? 0;
+
+    // ========================
+    // 2. SYSTEM PROMPT FINAL
+    // ========================
     const finalSystemPrompt = `
-      ${manual || ''} 
-      ERES EL ASISTENTE DE: ${empresaNombre}
-      ${botParams.systemPrompt ?? ''}
-    `.trim();
+${manual || ''}
+ERES EL ASISTENTE DE: ${empresaNombre}
+${botParams.systemPrompt ?? ''}
+`.trim();
 
-    const userContentParts: ChatCompletionContentPart[] = [];
+    // ========================
+    // 3. CONTENIDO DEL USUARIO
+    // ========================
+    const userContent: ChatCompletionContentPart[] = [];
 
-    if (question && question.trim().length > 0) {
-      userContentParts.push({ type: 'text', text: question });
-    } else if (!imageUrls || imageUrls.length === 0) {
-      userContentParts.push({ type: 'text', text: 'Hola' });
+    if (question?.trim()) {
+      userContent.push({ type: 'text', text: question });
+    } else if (!imageUrls?.length) {
+      userContent.push({ type: 'text', text: 'Hola' });
     }
 
-    if (imageUrls && imageUrls.length > 0) {
+    if (imageUrls?.length) {
       for (const url of imageUrls) {
-        userContentParts.push({
+        userContent.push({
           type: 'image_url',
-          image_url: { url: url, detail: 'auto' },
+          image_url: { url, detail: 'auto' },
         });
       }
     }
@@ -131,12 +143,14 @@ export class OpenAiIaService {
     const messages: ChatCompletionMessageParam[] = [
       { role: 'system', content: finalSystemPrompt },
       ...history,
-      { role: 'user', content: userContentParts },
+      { role: 'user', content: userContent },
     ];
 
     try {
-      // --- PRIMERA LLAMADA ---
-      const response = await this.openai.chat.completions.create({
+      // ========================
+      // 4. PRIMERA LLAMADA (LLM)
+      // ========================
+      const firstResponse = await this.openai.chat.completions.create({
         model,
         messages,
         tools: OPENAI_TOOLS,
@@ -148,117 +162,132 @@ export class OpenAiIaService {
         frequency_penalty: frequencyPenalty,
       });
 
-      const responseMessage = response.choices[0].message;
+      const assistantMessage = firstResponse.choices[0]?.message;
 
-      if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
-        this.logger.log(
-          ` Ejecutando ${responseMessage.tool_calls.length} herramientas`,
-        );
+      if (!assistantMessage) {
+        this.logger.error('OpenAI no retornó mensaje en primera llamada');
+        return 'No pude procesar tu solicitud en este momento.';
+      }
 
-        messages.push(responseMessage);
+      // ========================
+      // 5. SIN TOOLS → RESPUESTA DIRECTA
+      // ========================
+      if (!assistantMessage.tool_calls?.length) {
+        return assistantMessage.content ?? '';
+      }
 
-        for (const toolCall of responseMessage.tool_calls) {
-          if (toolCall.type !== 'function') continue;
+      this.logger.log(
+        `🛠 Ejecutando ${assistantMessage.tool_calls.length} herramienta(s)`,
+      );
 
-          const functionName = toolCall.function.name;
+      messages.push(assistantMessage);
 
-          // --- CORRECCIÓN 2: JSON.PARSE (NO STRINGIFY) ---
-          let functionArgs: any = {};
+      // ========================
+      // 6. EJECUCIÓN DE TOOLS
+      // ========================
+      for (const toolCall of assistantMessage.tool_calls) {
+        if (toolCall.type !== 'function') continue;
+
+        let args: any;
+        try {
+          args = JSON.parse(toolCall.function.arguments);
+        } catch (err) {
+          this.logger.error(
+            `❌ Error parseando argumentos de tool ${toolCall.function.name}`,
+            err,
+          );
+          continue;
+        }
+
+        // ========================
+        // 6.1 CREAR TICKET
+        // ========================
+        if (toolCall.function.name === 'crear_ticket_soporte') {
           try {
-            functionArgs = JSON.parse(toolCall.function.arguments);
-          } catch (e) {
-            this.logger.error('Error parseando argumentos de OpenAI', e);
-          }
+            const ticket = await this.crmService.create({
+              titulo: args.titulo,
+              descripcion: args.descripcion,
+            });
 
-          let toolResultContent = '';
+            messages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: JSON.stringify({
+                status: 'success',
+                ticket_id: ticket.id,
+              }),
+            });
+          } catch (err) {
+            this.logger.error('❌ Error creando ticket CRM', err);
 
-          try {
-            switch (functionName) {
-              case 'crear_ticket_soporte':
-                this.logger.debug(`Ejecutando funcion: ${functionName}`);
-                // Ahora sí functionArgs es un objeto
-                const ticket = await this.crmService.create({
-                  titulo: functionArgs.titulo,
-                  descripcion: functionArgs.descripcion,
-                });
-                toolResultContent = JSON.stringify({
-                  status: 'success',
-                  ticket_id: ticket.id,
-                  msg: 'Ticket creado',
-                });
-                break;
-
-              case 'buscar_producto_en_pos':
-                this.logger.debug(
-                  `############Ejecutando funcion######: ${functionName}`,
-                );
-
-                const dto = {
-                  producto: functionArgs.producto,
-                  categorias: functionArgs.categorias ?? [],
-                };
-
-                this.logger.log(
-                  `DTO enviado al ERP: \n${JSON.stringify(dto, null, 2)}`,
-                );
-
-                const productos_found = await this.pos_erp_Service.search(dto);
-
-                if (!productos_found) {
-                  toolResultContent = JSON.stringify([]);
-                } else {
-                  toolResultContent = JSON.stringify(productos_found);
-                }
-
-                this.logger.log(`Resultados POS: ${toolResultContent}`);
-
-                this.logger.log(
-                  `PRODUCTOS FOUND: \n${JSON.stringify(productos_found, null, 2)}`,
-                );
-
-                break;
-
-              default:
-                toolResultContent = JSON.stringify({
-                  error: 'Función no implementada',
-                });
-                break;
-            }
-          } catch (error) {
-            this.logger.error(`Error ejecutando ${functionName}`, error);
-            toolResultContent = JSON.stringify({
-              status: 'error',
-              message: 'Fallo interno al ejecutar acción',
+            messages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: JSON.stringify([]),
             });
           }
+        }
+
+        // ========================
+        // 6.2 BUSCAR PRODUCTOS POS
+        // ========================
+        if (toolCall.function.name === 'buscar_producto_en_pos') {
+          const dto = {
+            producto: args.producto,
+            categorias: Array.isArray(args.categorias) ? args.categorias : [],
+          };
+
+          this.logger.log(
+            `➡️ POS | DTO enviado:\n${JSON.stringify(dto, null, 2)}`,
+          );
+
+          let productos: any[] = [];
+
+          try {
+            const raw = await this.pos_erp_Service.search(dto);
+
+            if (Array.isArray(raw)) {
+              productos = raw;
+            } else {
+              this.logger.warn(
+                `⚠️ POS respondió formato inválido: ${typeof raw}`,
+              );
+            }
+          } catch (err) {
+            this.logger.error('❌ Error llamando POS ERP', err);
+          }
+
+          this.logger.log(`⬅️ POS | Productos retornados: ${productos.length}`);
 
           messages.push({
             role: 'tool',
             tool_call_id: toolCall.id,
-            content: toolResultContent,
+            content: JSON.stringify(productos),
           });
         }
-
-        // --- SEGUNDA LLAMADA ---
-        const finalResponse = await this.openai.chat.completions.create({
-          model,
-          messages,
-          temperature,
-          max_tokens: maxTokens,
-          presence_penalty: presencePenalty,
-          top_p: topP,
-          frequency_penalty: frequencyPenalty,
-        });
-
-        return finalResponse.choices[0].message.content ?? '';
       }
 
-      return responseMessage.content ?? '';
+      // ========================
+      // 7. SEGUNDA LLAMADA (RESPUESTA FINAL)
+      // ========================
+      const finalResponse = await this.openai.chat.completions.create({
+        model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        presence_penalty: presencePenalty,
+        top_p: topP,
+        frequency_penalty: frequencyPenalty,
+      });
+
+      return finalResponse.choices[0]?.message?.content ?? '';
     } catch (error) {
-      this.logger.error('Error OpenAiService', error);
+      this.logger.error('❌ Error general OpenAiIaService', error);
+
       if (error instanceof OpenAI.APIError) {
-        this.logger.error(JSON.stringify(error.error));
+        this.logger.error(`OpenAI APIError: ${JSON.stringify(error.error)}`);
       }
+
       return 'Lo siento, tuve un error interno procesando tu solicitud.';
     }
   }
