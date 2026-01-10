@@ -203,11 +203,14 @@ export class OpenAiIaService {
                 );
 
                 const productos_found = await this.pos_erp_Service.search(dto);
-                messages.push({
-                  role: 'tool',
-                  tool_call_id: toolCall.id,
-                  content: JSON.stringify(productos_found),
-                });
+
+                if (!productos_found) {
+                  toolResultContent = JSON.stringify([]);
+                } else {
+                  toolResultContent = JSON.stringify(productos_found);
+                }
+
+                this.logger.log(`Resultados POS: ${toolResultContent}`);
 
                 this.logger.log(
                   `PRODUCTOS FOUND: \n${JSON.stringify(productos_found, null, 2)}`,
