@@ -100,6 +100,7 @@ export class WhatsappApiMetaController {
           const myPhoneId = this.config.get<string>('WHATSAPP_PHONE_ID');
 
           if (incomingPhoneId !== myPhoneId) {
+            //COMENTARIO PARA FORZAR PUSH
             this.logger.warn(
               `Webhook ignorado. phone_number_id no coincide. Incoming=${incomingPhoneId} Expected=${myPhoneId}`,
             );
