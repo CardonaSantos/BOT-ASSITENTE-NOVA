@@ -96,6 +96,16 @@ export class WhatsappApiMetaController {
         for (const change of entry.changes ?? []) {
           const value = change.value;
 
+          const incomingPhoneId = value?.metadata?.phone_number_id;
+          const myPhoneId = this.config.get<string>('WHATSAPP_PHONE_ID');
+
+          if (incomingPhoneId !== myPhoneId) {
+            this.logger.warn(
+              `Webhook ignorado. phone_number_id no coincide. Incoming=${incomingPhoneId} Expected=${myPhoneId}`,
+            );
+            continue;
+          }
+
           // ===============================
           // 🟢 CASO 1: STATUS UPDATE
           // ===============================
