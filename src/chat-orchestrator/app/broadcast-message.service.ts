@@ -10,7 +10,7 @@ export class BroadCastMessageService {
   // Lo cambié a public para que puedas llamarlo desde tu Orquestador u otros servicios
   async notifyCrmUI(event: string, data: any) {
     this.logger.log(`BROADCAST:-> sending event [${event}]`);
-
+    // comentario para pushear
     const crmUrl = this.config.get<string>('CRM_API_URL');
     const secret = this.config.get<string>('INTERNAL_SECRET');
 
