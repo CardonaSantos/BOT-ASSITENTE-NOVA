@@ -1,13 +1,171 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
+model Empresa {
+  id            Int                 @id @default(autoincrement())
+  nombre        String
+  slug          String              @unique
+  activo        Boolean             @default(true)
+  creadoEn      DateTime            @default(now())
+  actualizadoEn DateTime            @updatedAt
+  bots          Bot[]
+  sesiones      ChatSession[]
+  clientes      Cliente[]
+  documentos    KnowledgeDocument[]
 }
 
-/* ---------- ENUMS ---------- */
+model Bot {
+  id                  Int           @id @default(autoincrement())
+  empresaId           Int
+  nombre              String
+  slug                String        @unique
+  descripcion         String?
+  provider            String        @default("fireworks")
+  model               String        @default("accounts/fireworks/models/gpt-oss-120b")
+  systemPrompt        String
+  contextPrompt       String?
+  historyPrompt       String?
+  outputStyle         String?
+  maxCompletionTokens Int?          @default(500)
+  temperature         Float         @default(0.7)
+  topP                Float?        @default(0.9)
+  frequencyPenalty    Float?        @default(0.2)
+  presencePenalty     Float?        @default(0.0)
+  maxHistoryMessages  Int?          @default(15)
+  status              BotStatus     @default(ACTIVE)
+  creadoEn            DateTime      @default(now())
+  actualizadoEn       DateTime      @updatedAt
+  empresa             Empresa       @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  sesiones            ChatSession[]
+}
+
+model Cliente {
+  id                 Int               @id @default(autoincrement())
+  empresaId          Int
+  nombre             String?
+  telefono           String
+  uuid               String?           @unique
+  crmUsuarioId       Int?
+  creadoEn           DateTime          @default(now())
+  actualizadoEn      DateTime          @updatedAt
+  botActivo          Boolean           @default(true)
+  ultimoMensajeFecha DateTime          @default(now())
+  sesiones           ChatSession[]
+  empresa            Empresa           @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  whatsappHistory    WhatsappMessage[]
+
+  fijado    Boolean @default(false)
+
+
+  @@unique([empresaId, telefono])
+}
+
+model ChatSession {
+  id                   Int               @id @default(autoincrement())
+  empresaId            Int
+  clienteId            Int?
+  telefono             String
+  canal                ChatChannel
+  estado               ChatSessionStatus @default(OPEN)
+  ultimoTicketCrmId    String?
+  ultimoTicketCreadoEn DateTime?
+  iniciadoEn           DateTime          @default(now())
+  cerradoEn            DateTime?
+  creadoEn             DateTime          @default(now())
+  actualizadoEn        DateTime          @updatedAt
+  botId                Int?
+  flowContext          Json?
+  flowIntent           ChatFlowIntent    @default(NONE)
+  flowStep             ChatFlowStep      @default(NONE)
+  mensajes             ChatMessage[]
+  bot                  Bot?              @relation(fields: [botId], references: [id])
+  cliente              Cliente?          @relation(fields: [clienteId], references: [id])
+  empresa              Empresa           @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  whatsappMessages     WhatsappMessage[]
+
+  @@index([empresaId, telefono, canal, estado])
+}
+
+model ChatMessage {
+  id            Int         @id @default(autoincrement())
+  sessionId     Int
+  rol           ChatRole
+  contenido     String
+  tokens        Int?
+  creadoEn      DateTime    @default(now())
+  actualizadoEn DateTime    @updatedAt
+  mediaUrl      String?
+  session       ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, creadoEn])
+}
+
+model KnowledgeDocument {
+  id            Int                   @id @default(autoincrement())
+  empresaId     Int
+  tipo          KnowledgeDocumentType
+  origen        String?
+  titulo        String
+  descripcion   String?
+  creadoEn      DateTime              @default(now())
+  actualizadoEn DateTime              @updatedAt
+  externoId     Int?
+  textoLargo    String?
+  activo        Boolean               @default(true)
+  chunks        KnowledgeChunk[]
+  empresa       Empresa               @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@index([empresaId, tipo])
+}
+
+model KnowledgeChunk {
+  id            Int                   @id @default(autoincrement())
+  documentId    Int
+  indice        Int
+  texto         String
+  embedding     Unsupported("vector")
+  tokens        Int?
+  creadoEn      DateTime              @default(now())
+  actualizadoEn DateTime              @updatedAt
+  document      KnowledgeDocument     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, indice])
+}
+
+/// ---------- WHATSAPPP: PERSISTENCIA DE CHATS ----------
+model WhatsappMessage {
+  wamid         String       @unique
+  chatSessionId Int?
+  clienteId     Int?
+  direction     WazDirection
+  from          String
+  to            String
+  type          WazMediaType
+  body          String?
+  mediaUrl      String?
+  mediaMimeType String?
+  mediaSha256   String?
+  status        WazStatus    @default(SENT)
+  errorCode     String?
+  errorMessage  String?
+  replyToWamid  String?
+  timestamp     BigInt
+  creadoEn      DateTime     @default(now())
+  actualizadoEn DateTime     @updatedAt
+  id            Int          @id @default(autoincrement())
+  chatSession   ChatSession? @relation(fields: [chatSessionId], references: [id])
+  cliente       Cliente?     @relation(fields: [clienteId], references: [id])
+
+  @@index([wamid])
+  @@index([clienteId])
+  @@index([status])
+}
 
 enum KnowledgeDocumentType {
   FAQ
@@ -17,16 +175,18 @@ enum KnowledgeDocumentType {
   TICKET
   COBRO
   OTRO
+  PROTOCOLO
+  FUNCION
 }
 
 enum ChatFlowStep {
-  START
-  IDENTIFICACION_SERVICIO
-  REVISION_ONU
+  NONE
+  IDENTIFICACION
   DIAGNOSTICO
-  ESCALADO
+  CONFIRMACION
+  ACCION
+  CIERRE
 }
-
 
 enum ChatRole {
   USER
@@ -49,279 +209,41 @@ enum ChatSessionStatus {
   ARCHIVED
 }
 
-/* ---------- EMPRESA / CLIENTE ---------- */
-
-model Empresa {
-  id            Int              @id @default(autoincrement())
-  nombre        String
-  slug          String           @unique   // "nova-sistemas", etc.
-  activo        Boolean          @default(true)
-
-  creadoEn      DateTime         @default(now())
-  actualizadoEn DateTime         @updatedAt
-
-  clientes      Cliente[]
-  documentos    KnowledgeDocument[]
-  sesiones      ChatSession[]
-  bots          Bot[]           
-}
-
 enum BotStatus {
   ACTIVE
   DISABLED
 }
 
-model Bot {
-  id           Int       @id @default(autoincrement())
-
-  empresa      Empresa   @relation(fields: [empresaId], references: [id], onDelete: Cascade)
-  empresaId    Int
-
-  nombre       String
-  slug         String    @unique
-  descripcion  String?
-
-  // LLM / proveedor
-  provider     String    @default("fireworks")
-  model        String    @default("accounts/fireworks/models/gpt-oss-120b")
-
-  // 🔹 Comportamiento principal (persona)
-  // Puedes tratarlo como template: "Eres el asistente de {{empresaNombre}} ..."
-  systemPrompt   String   @db.Text
-
-  // 🔹 Cómo integrar contexto de RAG e historial
-  contextPrompt  String?  @db.Text // "Te daré contexto de base de conocimiento: {{context}} ..."
-  historyPrompt  String?  @db.Text // "A continuación tienes el historial reciente: {{history}} ..."
-
-  // 🔹 Estilo de salida (WhatsApp / web / etc.)
-  outputStyle    String?  @db.Text
-  // Ej: "Responde como mensaje de WhatsApp: sin tablas, solo texto plano, negritas con *...* y emojis."
-
-  // 🔹 Parámetros del modelo (performance en el sentido de generación)
-  maxCompletionTokens Int?    @default(500)
-  temperature         Float   @default(0.7)
-  topP                Float?  @default(0.9)
-  frequencyPenalty    Float?  @default(0.2)
-  presencePenalty     Float?  @default(0.0)
-
-  maxHistoryMessages  Int?    @default(15)
-  status        BotStatus @default(ACTIVE)
-
-  creadoEn      DateTime  @default(now())
-  actualizadoEn DateTime  @updatedAt
-
-  sesiones       ChatSession[]
-  // knowledgeLinks BotKnowledge[]
-  // channelConfigs BotChannelConfig[]
-}
-
-
-model Cliente {
-  id            Int       @id @default(autoincrement())
-
-  empresa       Empresa   @relation(fields: [empresaId], references: [id], onDelete: Cascade)
-  empresaId     Int
-
-  nombre        String?
-  telefono      String          // ID lógico principal
-  uuid          String? @unique // UUID oficial del CRM (si aplica)
-  crmUsuarioId  Int?            // si tu CRM usa id numérico y te sirve
-
-  creadoEn      DateTime  @default(now())
-  actualizadoEn DateTime  @updatedAt
-  
-  botActivo     Boolean   @default(true) 
-
-  sesiones      ChatSession[]
-
-  ultimoMensajeFecha DateTime @default(now())
-
-  // Historial completo de WhatsApp de este cliente
-  whatsappHistory WhatsappMessage[]
-  // Un teléfono no se repite dentro de la misma empresa
-  @@unique([empresaId, telefono])
-}
-
-/* ---------- CHAT ---------- */
-
-model ChatSession {
-  id                   Int               @id @default(autoincrement())
-
-  empresa              Empresa           @relation(fields: [empresaId], references: [id], onDelete: Cascade)
-  empresaId            Int
-
-  // 👇 Qué bot atendió esta sesión
-  bot                  Bot?              @relation(fields: [botId], references: [id])
-  botId                Int?
-
-  cliente              Cliente?          @relation(fields: [clienteId], references: [id])
-  clienteId            Int?
-
-  telefono             String
-  canal                ChatChannel
-  estado               ChatSessionStatus @default(OPEN)
-
-  whatsappMessages WhatsappMessage[]
-
-  // Integración con CRM: último ticket creado en esta sesión
-  ultimoTicketCrmId    String?
-  ultimoTicketCreadoEn DateTime?
-
-  iniciadoEn           DateTime          @default(now())
-  cerradoEn            DateTime?
-  creadoEn             DateTime          @default(now())
-  actualizadoEn        DateTime          @updatedAt
-
-  mensajes             ChatMessage[]
-
-  @@index([empresaId, telefono, canal, estado])
-}
-
-model ChatMessage {
-  id         Int        @id @default(autoincrement())
-
-  session    ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  sessionId  Int
-
-  rol        ChatRole
-  contenido  String
-  tokens     Int?
-
-  creadoEn   DateTime    @default(now())
-  actualizadoEn DateTime         @updatedAt
-
-  @@index([sessionId, creadoEn])
-}
-
-/* ---------- RAG: DOCUMENTOS / CHUNKS ---------- */
-
-model KnowledgeDocument {
-  id          Int                   @id @default(autoincrement())
-
-  empresa     Empresa               @relation(fields: [empresaId], references: [id], onDelete: Cascade)
-  empresaId   Int
-
-  tipo        KnowledgeDocumentType
-  externoId   Int?
-  origen      String?
-
-  titulo      String
-  descripcion String?
-  textoLargo String? @db.Text
-
-  // textoLargo   String
-  creadoEn      DateTime            @default(now())
-  actualizadoEn DateTime            @updatedAt
-
-  chunks      KnowledgeChunk[]
-
-  @@index([empresaId, tipo])
-}
-
-model KnowledgeChunk {
-  id         Int               @id @default(autoincrement())
-
-  document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  documentId Int
-
-  indice     Int
-  texto      String
-
-  embedding  Unsupported("vector(4096)")
-  tokens     Int?
-
-  creadoEn       DateTime @default(now())
-  actualizadoEn  DateTime @updatedAt
-
-  @@index([documentId, indice])
-}
-
-/* ---------- RAG: DOCUMENTOS / CHUNKS ---------- */
-
-
-/* ---------- WHATSAPPP: PERSISTENCIA DE CHATS ---------- */
-model WhatsappMessage {
-  id        Int   @id @default(autoincrement()) // ID interno nuestro
-  
-  // 🆔 IDENTIFICADORES DE META
-  // El 'wamid' es vital para actualizar estados (doble check) y manejar respuestas
-  wamid     String   @unique 
-  
-  // 🔗 RELACIONES
-  // Opcional: Saber a qué sesión de IA perteneció este mensaje (si hubo una)
-  chatSessionId Int?
-  chatSession   ChatSession? @relation(fields: [chatSessionId], references: [id])
-  
-  // Relación con tu Cliente (fundamental para historial por contacto)
-  clienteId     Int?
-  cliente       Cliente?     @relation(fields: [clienteId], references: [id])
-
-  // 📞 DATOS DE ENVÍO
-  direction     WazDirection
-  from          String       // Número del que envía (Cliente o Bot)
-  to            String       // Número del que recibe
-  
-  // 📦 CONTENIDO
-  type          WazMediaType
-  body          String?      @db.Text // El texto del mensaje o el "Caption" de la foto
-  
-  // 🖼️ MULTIMEDIA (Aquí usas lo de DO Spaces)
-  mediaUrl      String?      // URL pública del archivo
-  mediaMimeType String?      // image/jpeg, audio/ogg
-  mediaSha256   String?      // Para evitar re-subir el mismo archivo
-  
-  // ✅ ESTADOS (Webhooks actualizan esto)
-  status        WazStatus    @default(SENT)
-  errorCode     String?      // Si status es FAILED, aquí guardas por qué
-  errorMessage  String?
-
-  // ↩️ CONTEXTO (Respuestas)
-  // Si este mensaje es respuesta a otro, guardamos el wamid del padre
-  replyToWamid  String?      
-  
-  // 📅 FECHAS
-  timestamp     BigInt       // Timestamp original de WhatsApp (Unix)
-  creadoEn      DateTime     @default(now())
-  actualizadoEn DateTime     @updatedAt
-
-  @@index([wamid])
-  @@index([clienteId])
-  @@index([status])
-}
-/* ---------- WHATSAPPP: PERSISTENCIA DE CHATS ---------- */
-
-
-// ENUMS
-// Dirección del mensaje: ¿Entra al servidor o Sale del servidor?
 enum WazDirection {
-  INBOUND  // Cliente -> Bot
-  OUTBOUND // Bot -> Cliente
+  INBOUND
+  OUTBOUND
 }
 
-// Estado de entrega (El "Check")
 enum WazStatus {
-  SENT      // Un check gris (Enviado a Meta)
-  DELIVERED // Doble check gris (Llegó al celular)
-  READ      // Doble check azul (Leído)
-  FAILED    // Error (No salió)
+  SENT
+  DELIVERED
+  READ
+  FAILED
 }
 
-// Tipo de contenido (Para saber cómo renderizarlo en el UI)
 enum WazMediaType {
   TEXT
   IMAGE
-  AUDIO     // Notas de voz
+  AUDIO
   VIDEO
-  DOCUMENT  // PDFs
+  DOCUMENT
   STICKER
   LOCATION
-  TEMPLATE  // Plantillas de marketing
-  INTERACTIVE // Botones y listas
+  TEMPLATE
+  INTERACTIVE
   UNKNOWN
 }
 
-
-
-
-
-
+enum ChatFlowIntent {
+  NONE
+  SOPORTE
+  VENTAS
+  FACTURACION
+  TIENDA
+  INFORMACION
+}
