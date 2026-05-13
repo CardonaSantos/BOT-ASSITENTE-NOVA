@@ -60,8 +60,6 @@ model Cliente {
   empresa            Empresa           @relation(fields: [empresaId], references: [id], onDelete: Cascade)
   whatsappHistory    WhatsappMessage[]
 
-  fijado    Boolean @default(false)
-
 
   @@unique([empresaId, telefono])
 }
