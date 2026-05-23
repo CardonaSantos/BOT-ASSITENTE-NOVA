@@ -32,27 +32,61 @@ export const OPENAI_TOOLS: OpenAI.Responses.Tool[] = [
     type: 'function',
     name: 'buscar_producto_en_pos',
     description:
-      'Consulta el inventario del POS usando un término principal y categorías cortas relacionadas.',
+      'Busca productos disponibles en el POS/ERP por intención del cliente. Úsala cuando el cliente pregunte por existencia, precios, inventario, productos, marcas, modelos o alternativas disponibles.',
     strict: true,
     parameters: {
       type: 'object',
       properties: {
         producto: {
-          type: 'string',
+          type: ['string', 'null'],
           description:
-            'Término principal de búsqueda. Debe ser corto y concreto. Ej: "iphone", "samsung", "laptop", "teclado".',
+            'Texto principal que pidió el cliente. Puede ser marca, modelo, familia o tipo de producto. Ejemplos: "iphone", "samsung", "teléfonos", "laptop hp", "protector". Usa null si el cliente pregunta algo general.',
         },
         categorias: {
           type: 'array',
           description:
-            'Etiquetas cortas relacionadas. Máximo 5 elementos. Ej: ["telefono", "celular", "smartphone", "apple"].',
+            'Términos relacionados para ampliar la búsqueda. Incluye sinónimos, tipo de producto, marcas mencionadas por el cliente y variantes probables. Ejemplo: ["telefono", "celular", "smartphone", "iphone", "samsung", "xiaomi"].',
           items: {
             type: 'string',
           },
-          maxItems: 5,
+          maxItems: 25,
+        },
+        limit: {
+          type: ['integer', 'null'],
+          description:
+            'Cantidad máxima de productos a retornar. Usa 30 por defecto. Usa null si no se especifica.',
         },
       },
-      required: ['producto', 'categorias'],
+      required: ['producto', 'categorias', 'limit'],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: 'function',
+    name: 'listar_catalogo_pos',
+    description:
+      'Lista categorías/familias disponibles del POS/ERP con conteo de productos y ejemplos. Úsala cuando el cliente pregunte qué venden, qué productos manejan, qué categorías tienen, o cuando una búsqueda de productos no encuentre buenos resultados. Tambien puedes usarla para cuando le quieras ofrecer alternativas de productos al cliente o si le podría interesar algo más a el mismo',
+    strict: true,
+    parameters: {
+      type: 'object',
+      properties: {
+        consulta: {
+          type: ['string', 'null'],
+          description:
+            'Texto opcional para filtrar categorías o productos. Ejemplos: "telefonos", "accesorios", "computadoras". Usa null para listar categorías generales. Lista las mas relevantes o que le podrian interesar al usuario',
+        },
+        limit: {
+          type: ['integer', 'null'],
+          description:
+            'Máximo de categorías a retornar. Usa 20 por defecto. Usa null si no se especifica.',
+        },
+        incluirEjemplos: {
+          type: ['boolean', 'null'],
+          description:
+            'Si debe incluir algunos productos de ejemplo por categoría. Usa true cuando el cliente pregunta qué hay disponible.',
+        },
+      },
+      required: ['consulta', 'limit', 'incluirEjemplos'],
       additionalProperties: false,
     },
   },
@@ -161,8 +195,6 @@ export class OpenAiIaService {
 
     const model = this.config.get<string>('OPENAI_MODEL') ?? 'gpt-5.5';
     const maxTokens = botParams.maxCompletionTokens ?? 1200;
-    // const temperature = botParams.temperature ?? 0.3;
-    // const topP = botParams.topP ?? 1.0;
 
     const instructions = this.buildInstructions(
       empresaNombre,
@@ -285,8 +317,6 @@ export class OpenAiIaService {
           tool_choice: 'auto',
           store: true,
           max_output_tokens: maxTokens,
-          // temperature,
-          // top_p: topP,
         });
       }
 
