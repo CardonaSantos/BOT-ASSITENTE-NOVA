@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/prisma/prisma-service/prisma-service.service';
 import { CrmService } from 'src/crm/app/crm.service';
 import { PosFunctionsService } from 'src/pos-functions/app/pos-functions.service';
+import { BotListarCatalogoDto } from 'src/pos-functions/dto/pos-functions.dto';
 
 export const OPENAI_TOOLS: OpenAI.Responses.Tool[] = [
   {
@@ -304,6 +305,87 @@ export class OpenAiIaService {
               type: 'function_call_output',
               call_id: toolCall.call_id,
               output: JSON.stringify(productos),
+            });
+          }
+
+          if (toolCall.name === 'listar_catalogo_pos') {
+            const dto: BotListarCatalogoDto = {
+              consulta: typeof args.consulta === 'string' ? args.consulta : '',
+              incluirEjemplos:
+                typeof args.incluirEjemplos === 'boolean'
+                  ? args.incluirEjemplos
+                  : true,
+            };
+
+            const parsedLimit = Number(args.limit);
+
+            if (Number.isFinite(parsedLimit) && parsedLimit > 0) {
+              dto.limit = Math.trunc(parsedLimit);
+            }
+
+            let toolPayload: any = {
+              ok: false,
+              tipoResultado: 'catalogo_pos',
+              consulta: dto.consulta,
+              totalGrupos: 0,
+              grupos: [],
+              mensajeInterno:
+                'No se pudo consultar el catálogo POS. No asumir que no hay productos.',
+            };
+
+            try {
+              const raw = await this.pos_erp_Service.listar_catalogo_pos(dto);
+
+              const grupos = Array.isArray(raw) ? raw : [];
+
+              toolPayload = {
+                ok: true,
+                tipoResultado: 'catalogo_pos',
+                consulta: dto.consulta,
+                incluirEjemplos: dto.incluirEjemplos,
+                totalGrupos: grupos.length,
+                grupos,
+                reglasInventario: {
+                  CON_STOCK:
+                    'Producto con existencia disponible para venta inmediata.',
+                  SIN_STOCK_PARA_PEDIDO:
+                    'Producto sin existencia actual, pero puede mencionarse como opción para pedido o apartado.',
+                },
+              };
+
+              this.logger.log(
+                `[OPENAI_TOOL_RESULT] listar_catalogo_pos grupos=${grupos.length}\nPREVIEW:\n${JSON.stringify(
+                  grupos.slice(0, 10).map((g) => ({
+                    categoria: g?.categoria?.nombre ?? null,
+                    totalProductosRelacionados:
+                      g?.totalProductosRelacionados ?? null,
+                    totalConStock: g?.totalConStock ?? null,
+                    totalParaPedido: g?.totalParaPedido ?? null,
+                    ejemplos: Array.isArray(g?.ejemplos)
+                      ? g.ejemplos.slice(0, 5).map((p) => ({
+                          id: p.id,
+                          nombre: p.nombre,
+                          precio: p.precio,
+                          totalDisponible: p.totalDisponible,
+                          inventarioEstado: p.inventarioEstado,
+                        }))
+                      : [],
+                  })),
+                  null,
+                  2,
+                )}`,
+              );
+            } catch (err) {
+              this.logger.error(
+                '[OPENAI_TOOL_ERROR] Error llamando listar_catalogo_pos',
+                err,
+              );
+            }
+
+            toolOutputs.push({
+              type: 'function_call_output',
+              call_id: toolCall.call_id,
+              output: JSON.stringify(toolPayload),
             });
           }
         }
