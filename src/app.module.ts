@@ -17,6 +17,7 @@ import { WhatsappMessageModule } from './whatsapp/chat/chat.module';
 import { CrmModule } from './crm/crm.module';
 import { PosFunctionsModule } from './pos-functions/pos-functions.module';
 import { OpenAiModule } from './open-ia/open-ia.module';
+import { MediaModule } from './media/media.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { OpenAiModule } from './open-ia/open-ia.module';
     CrmModule,
     PosFunctionsModule,
     OpenAiModule,
+    MediaModule,
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService],
