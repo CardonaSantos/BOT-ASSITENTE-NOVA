@@ -1,6 +1,6 @@
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // url      = env("DATABASE_URL")
 }
 
 generator client {
@@ -94,23 +94,16 @@ model Bot {
   slug         String    @unique
   descripcion  String?
 
-  // LLM / proveedor
   provider     String    @default("fireworks")
   model        String    @default("accounts/fireworks/models/gpt-oss-120b")
 
-  // 🔹 Comportamiento principal (persona)
-  // Puedes tratarlo como template: "Eres el asistente de {{empresaNombre}} ..."
   systemPrompt   String   @db.Text
 
-  // 🔹 Cómo integrar contexto de RAG e historial
-  contextPrompt  String?  @db.Text // "Te daré contexto de base de conocimiento: {{context}} ..."
-  historyPrompt  String?  @db.Text // "A continuación tienes el historial reciente: {{history}} ..."
+  contextPrompt  String?  @db.Text 
+  historyPrompt  String?  @db.Text 
 
-  // 🔹 Estilo de salida (WhatsApp / web / etc.)
   outputStyle    String?  @db.Text
-  // Ej: "Responde como mensaje de WhatsApp: sin tablas, solo texto plano, negritas con *...* y emojis."
 
-  // 🔹 Parámetros del modelo (performance en el sentido de generación)
   maxCompletionTokens Int?    @default(500)
   temperature         Float   @default(0.7)
   topP                Float?  @default(0.9)
@@ -124,8 +117,6 @@ model Bot {
   actualizadoEn DateTime  @updatedAt
 
   sesiones       ChatSession[]
-  // knowledgeLinks BotKnowledge[]
-  // channelConfigs BotChannelConfig[]
 }
 
 
@@ -136,9 +127,9 @@ model Cliente {
   empresaId     Int
 
   nombre        String?
-  telefono      String          // ID lógico principal
-  uuid          String? @unique // UUID oficial del CRM (si aplica)
-  crmUsuarioId  Int?            // si tu CRM usa id numérico y te sirve
+  telefono      String         
+  uuid          String? @unique 
+  crmUsuarioId  Int?
 
   creadoEn      DateTime  @default(now())
   actualizadoEn DateTime  @updatedAt
@@ -149,9 +140,7 @@ model Cliente {
 
   ultimoMensajeFecha DateTime @default(now())
 
-  // Historial completo de WhatsApp de este cliente
   whatsappHistory WhatsappMessage[]
-  // Un teléfono no se repite dentro de la misma empresa
   @@unique([empresaId, telefono])
 }
 
@@ -163,7 +152,6 @@ model ChatSession {
   empresa              Empresa           @relation(fields: [empresaId], references: [id], onDelete: Cascade)
   empresaId            Int
 
-  // 👇 Qué bot atendió esta sesión
   bot                  Bot?              @relation(fields: [botId], references: [id])
   botId                Int?
 
@@ -176,7 +164,6 @@ model ChatSession {
 
   whatsappMessages WhatsappMessage[]
 
-  // Integración con CRM: último ticket creado en esta sesión
   ultimoTicketCrmId    String?
   ultimoTicketCreadoEn DateTime?
 
@@ -231,7 +218,6 @@ model KnowledgeDocument {
   descripcion String?
   textoLargo String? @db.Text
 
-  // textoLargo   String
   creadoEn      DateTime            @default(now())
   actualizadoEn DateTime            @updatedAt
 
@@ -267,43 +253,31 @@ model KnowledgeChunk {
 model WhatsappMessage {
   id        Int   @id @default(autoincrement()) // ID interno nuestro
   
-  // 🆔 IDENTIFICADORES DE META
-  // El 'wamid' es vital para actualizar estados (doble check) y manejar respuestas
   wamid     String   @unique 
   
-  // 🔗 RELACIONES
-  // Opcional: Saber a qué sesión de IA perteneció este mensaje (si hubo una)
   chatSessionId Int?
   chatSession   ChatSession? @relation(fields: [chatSessionId], references: [id])
   
-  // Relación con tu Cliente (fundamental para historial por contacto)
   clienteId     Int?
   cliente       Cliente?     @relation(fields: [clienteId], references: [id])
 
-  // 📞 DATOS DE ENVÍO
   direction     WazDirection
-  from          String       // Número del que envía (Cliente o Bot)
-  to            String       // Número del que recibe
+  from          String      
+  to            String       
   
-  // 📦 CONTENIDO
   type          WazMediaType
-  body          String?      @db.Text // El texto del mensaje o el "Caption" de la foto
+  body          String?      @db.Text 
   
-  // 🖼️ MULTIMEDIA (Aquí usas lo de DO Spaces)
   mediaUrl      String?      // URL pública del archivo
   mediaMimeType String?      // image/jpeg, audio/ogg
   mediaSha256   String?      // Para evitar re-subir el mismo archivo
   
-  // ✅ ESTADOS (Webhooks actualizan esto)
   status        WazStatus    @default(SENT)
-  errorCode     String?      // Si status es FAILED, aquí guardas por qué
+  errorCode     String?      
   errorMessage  String?
 
-  // ↩️ CONTEXTO (Respuestas)
-  // Si este mensaje es respuesta a otro, guardamos el wamid del padre
   replyToWamid  String?      
   
-  // 📅 FECHAS
   timestamp     BigInt       // Timestamp original de WhatsApp (Unix)
   creadoEn      DateTime     @default(now())
   actualizadoEn DateTime     @updatedAt
@@ -312,7 +286,6 @@ model WhatsappMessage {
   @@index([clienteId])
   @@index([status])
 }
-/* ---------- WHATSAPPP: PERSISTENCIA DE CHATS ---------- */
 
 
 // ENUMS
