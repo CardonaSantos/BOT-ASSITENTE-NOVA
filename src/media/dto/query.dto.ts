@@ -1,12 +1,30 @@
 import { WazDirection, WazMediaType } from '@prisma/client';
+import { Type } from 'class-transformer';
+import { IsEnum, IsInt, IsOptional, IsString } from 'class-validator';
 
 export class QueryMediaSearch {
-  creadoEn: string;
-  clienteId: number;
+  @IsOptional()
+  @IsString()
+  creadoEn?: string;
 
-  startDate: string;
-  endDate: string;
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  clienteId?: number;
 
-  type: WazMediaType;
-  direction: WazDirection;
+  @IsOptional()
+  @IsString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsString()
+  endDate?: string;
+
+  @IsOptional()
+  @IsEnum(WazMediaType)
+  type?: WazMediaType;
+
+  @IsOptional()
+  @IsEnum(WazDirection)
+  direction?: WazDirection;
 }

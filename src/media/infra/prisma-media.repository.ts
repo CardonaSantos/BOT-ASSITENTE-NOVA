@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { MediaRepository } from '../domain/media.repository';
 import { QueryMediaSearch } from '../dto/query.dto';
 import { PrismaService } from 'src/prisma/prisma-service/prisma-service.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, WazMediaType } from '@prisma/client';
 
 import { dayjs } from 'src/Utils/dayjs.config';
 import { mapMediaArray, MediaDataArray } from '../common/mappers';
@@ -16,13 +16,33 @@ export class PrismaMediaRepository implements MediaRepository {
 
     const where: Prisma.WhatsappMessageWhereInput = {};
 
-    where.type = {
-      in: ['DOCUMENT', 'IMAGE', 'AUDIO', 'VIDEO'],
-    };
+    /**
+     * Si viene un tipo específico desde la UI:
+     * IMAGE / DOCUMENT / VIDEO / AUDIO
+     *
+     * usamos equals.
+     *
+     * Si NO viene type:
+     * traemos todos los media soportados.
+     */
+    if (type) {
+      where.type = {
+        equals: type,
+      };
+    } else {
+      where.type = {
+        in: [
+          WazMediaType.DOCUMENT,
+          WazMediaType.IMAGE,
+          WazMediaType.AUDIO,
+          WazMediaType.VIDEO,
+        ],
+      };
+    }
 
     if (clienteId) {
       where.clienteId = {
-        equals: clienteId,
+        equals: Number(clienteId),
       };
     }
 
@@ -45,6 +65,8 @@ export class PrismaMediaRepository implements MediaRepository {
 
       where.creadoEn = rango;
     }
+
+    console.log('WHERE MEDIA GALERY:', JSON.stringify(where, null, 2));
 
     const records: Array<MediaDataArray> =
       await this.prisma.whatsappMessage.findMany({

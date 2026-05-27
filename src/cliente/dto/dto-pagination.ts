@@ -43,7 +43,6 @@ export class FindClientesMessagesQuery {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(200)
   take?: number;
 
   @IsOptional()
