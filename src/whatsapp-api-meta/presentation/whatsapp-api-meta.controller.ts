@@ -77,6 +77,12 @@ export class WhatsappApiMetaController {
     return res.sendStatus(HttpStatus.FORBIDDEN);
   }
 
+  /**
+   * FUNCION DE RECEPCION DE MENSAJE EN PRODUCCION
+   * @param body
+   * @param req
+   * @returns
+   */
   @Post('webhook')
   async handleWebhook(@Body() body: any, @Req() req: Request) {
     try {
@@ -143,6 +149,7 @@ export class WhatsappApiMetaController {
               case 'image': {
                 const mimeType = message.image?.mime_type ?? null;
                 textoExtraido = message.image?.caption ?? '[Imagen]';
+
                 mediaData = {
                   mediaId: message.image?.id,
                   kind: 'image',
@@ -151,12 +158,14 @@ export class WhatsappApiMetaController {
                   extension: extFromMime(mimeType),
                   direction,
                 };
+
                 break;
               }
 
               case 'document': {
                 const mimeType = message.document?.mime_type ?? null;
                 const filename = message.document?.filename ?? null;
+
                 textoExtraido =
                   message.document?.caption ??
                   `[Documento${filename ? `: ${filename}` : ''}]`;
@@ -169,12 +178,15 @@ export class WhatsappApiMetaController {
                   extension: extFromFilename(filename) ?? extFromMime(mimeType),
                   direction,
                 };
+
                 break;
               }
 
               case 'audio': {
                 const mimeType = message.audio?.mime_type ?? null;
+
                 textoExtraido = '[Audio]';
+
                 mediaData = {
                   mediaId: message.audio?.id,
                   kind: 'audio',
@@ -183,12 +195,38 @@ export class WhatsappApiMetaController {
                   extension: extFromMime(mimeType) ?? 'ogg',
                   direction,
                 };
+
+                break;
+              }
+
+              case 'video': {
+                const mimeType = message.video?.mime_type ?? null;
+
+                textoExtraido = message.video?.caption ?? '[Video]';
+
+                mediaData = {
+                  mediaId: message.video?.id,
+                  kind: 'video',
+                  mimeType,
+                  filename: null,
+                  extension: extFromMime(mimeType) ?? 'mp4',
+                  direction,
+                };
+
                 break;
               }
 
               default:
                 textoExtraido = `[${message.type}]`;
             }
+
+            this.logger.log(
+              `WA MSG parsed type=${message.type} typeEnum=${typeEnum} media=${JSON.stringify(
+                mediaData,
+                null,
+                2,
+              )}`,
+            );
 
             await this.orquestador.handleIncomingMessage({
               // empresaSlug: 'nova-sistemas',
@@ -216,8 +254,11 @@ export class WhatsappApiMetaController {
     }
   }
 
-  // TESTEO LOCAL
-
+  /**
+   * PARA TESTEOS LOCALES
+   * @param body
+   * @returns
+   */
   @Post('message')
   async sendMessage(@Body() body: { message: string }) {
     const telefono = '40017273';

@@ -32,6 +32,10 @@ export function extFromFilename(filename?: string | null): string | null {
 export function extFromMime(mime?: string | null): string | null {
   if (!mime) return null;
 
+  const cleanMime = mime.split(';')[0]?.trim().toLowerCase();
+
+  if (!cleanMime) return null;
+
   const map: Record<string, string> = {
     'image/jpeg': 'jpg',
     'image/jpg': 'jpg',
@@ -42,14 +46,18 @@ export function extFromMime(mime?: string | null): string | null {
     'application/pdf': 'pdf',
 
     'audio/ogg': 'ogg',
-    'audio/opus': 'opus',
+    'audio/opus': 'ogg',
     'audio/mpeg': 'mp3',
     'audio/mp4': 'm4a',
     'audio/aac': 'aac',
+    'audio/wav': 'wav',
+    'audio/webm': 'webm',
 
     'video/mp4': 'mp4',
     'video/3gpp': '3gp',
+    'video/quicktime': 'mov',
+    'video/webm': 'webm',
   };
 
-  return map[mime] ?? null;
+  return map[cleanMime] ?? null;
 }
