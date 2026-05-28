@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { throwFatalError } from 'src/Utils/CommonFatalError';
+import { lastValueFrom } from 'rxjs';
+import { ConfigService } from '@nestjs/config';
+
 type MetaSendMessageResponse = {
   messaging_product: 'whatsapp';
   contacts?: { input: string; wa_id: string }[];
@@ -9,8 +12,16 @@ type MetaSendMessageResponse = {
 
 @Injectable()
 export class WhatsappApiMetaService {
+  private readonly token: string;
+
   private readonly logger = new Logger(WhatsappApiMetaService.name);
-  constructor(private readonly http: HttpService) {}
+  constructor(
+    private readonly http: HttpService,
+    private readonly config: ConfigService,
+  ) {
+    this.token = this.config.get<string>('WHATSAPP_API_TOKEN') ?? '';
+    if (!this.token) throw new Error('WHATSAPP_API_TOKEN faltante');
+  }
 
   async sendText(to: string, text: string): Promise<{ wamid: string | null }> {
     const bodyText = sanitizeWhatsAppText(text);
@@ -106,6 +117,47 @@ export class WhatsappApiMetaService {
     } catch (error) {
       this.logger.error('Error enviando media a Meta', error);
       throw error; // O usa tu throwFatalError
+    }
+  }
+
+  async markAsReadWithTyping(messageId: string) {
+    const phoneNumberId = this.config.get<string>('WHATSAPP_PHONE_NUMBER_ID');
+
+    if (!phoneNumberId) {
+      this.logger.warn('WHATSAPP_PHONE_NUMBER_ID faltante');
+      return;
+    }
+
+    try {
+      const payload = {
+        messaging_product: 'whatsapp',
+        status: 'read',
+        message_id: messageId,
+        typing_indicator: {
+          type: 'text',
+        },
+      };
+
+      await lastValueFrom(
+        this.http.post(
+          `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
+          payload,
+          {
+            headers: {
+              Authorization: `Bearer ${this.token}`,
+              'Content-Type': 'application/json',
+            },
+          },
+        ),
+      );
+
+      this.logger.debug(`Typing indicator enviado para ${messageId}`);
+    } catch (error: any) {
+      this.logger.warn(
+        `No se pudo enviar typing indicator para ${messageId}: ${
+          error?.message ?? error
+        }`,
+      );
     }
   }
 }
