@@ -97,8 +97,22 @@ type ReplyParams = {
   empresaNombre: string;
   question: string;
   manual: string;
+
   imageUrls?: string[];
+  audioUrls?: string[];
+  videoUrls?: string[];
+  documentUrls?: string[];
+
+  audioTranscripts?: string[];
+  videoTranscripts?: string[];
+  documentTexts?: string[];
+  videoFrameUrls?: string[];
+
   previousResponseId?: string | null;
+};
+
+type ReplyStreamParams = ReplyParams & {
+  onToken?: (token: string) => void;
 };
 
 export type ReplyResult = {
@@ -132,11 +146,82 @@ export class OpenAiIaService {
       .join('\n');
   }
 
+  private buildMediaContext(params: {
+    audioUrls?: string[];
+    videoUrls?: string[];
+    documentUrls?: string[];
+
+    audioTranscripts?: string[];
+    videoTranscripts?: string[];
+    documentTexts?: string[];
+  }) {
+    const parts: string[] = [];
+
+    if (params.audioTranscripts?.length) {
+      parts.push(
+        [
+          'Audios transcritos:',
+          ...params.audioTranscripts.map((text, index) => {
+            return `${index + 1}. ${text}`;
+          }),
+        ].join('\n'),
+      );
+    } else if (params.audioUrls?.length) {
+      parts.push(
+        [
+          'Audios recibidos, pero sin transcripción disponible:',
+          ...params.audioUrls.map((url, index) => `${index + 1}. ${url}`),
+          'No asumas el contenido del audio. Pide que escriban el mensaje si hace falta.',
+        ].join('\n'),
+      );
+    }
+
+    if (params.videoTranscripts?.length) {
+      parts.push(
+        [
+          'Videos con audio transcrito:',
+          ...params.videoTranscripts.map((text, index) => {
+            return `${index + 1}. ${text}`;
+          }),
+        ].join('\n'),
+      );
+    } else if (params.videoUrls?.length) {
+      parts.push(
+        [
+          'Videos recibidos, pero sin análisis visual disponible:',
+          ...params.videoUrls.map((url, index) => `${index + 1}. ${url}`),
+          'No asumas el contenido del video. Si hace falta diagnóstico visual, pide una foto clara o una descripción breve.',
+        ].join('\n'),
+      );
+    }
+
+    if (params.documentTexts?.length) {
+      parts.push(
+        [
+          'Texto extraído de documentos:',
+          ...params.documentTexts.map((text, index) => {
+            return `${index + 1}. ${text}`;
+          }),
+        ].join('\n\n'),
+      );
+    } else if (params.documentUrls?.length) {
+      parts.push(
+        [
+          'Documentos recibidos, pero sin extracción de texto disponible:',
+          ...params.documentUrls.map((url, index) => `${index + 1}. ${url}`),
+          'No asumas el contenido del documento. Pide reenviarlo como texto o espera revisión interna si hace falta.',
+        ].join('\n'),
+      );
+    }
+
+    return parts.join('\n\n');
+  }
+
   private buildUserInput(
     question: string,
     imageUrls?: string[],
   ): OpenAI.Responses.ResponseInput {
-    const content = [];
+    const content: any[] = [];
 
     if (question?.trim()) {
       content.push({
@@ -166,9 +251,310 @@ export class OpenAiIaService {
     ];
   }
 
+  private buildTools(vectorStoreId: string): OpenAI.Responses.Tool[] {
+    const tools: OpenAI.Responses.Tool[] = [];
+
+    if (vectorStoreId) {
+      tools.push({
+        type: 'file_search',
+        vector_store_ids: [vectorStoreId],
+      });
+    }
+
+    return [...tools, ...OPENAI_TOOLS];
+  }
+
+  private buildResponseRequest(params: {
+    model: string;
+    instructions: string;
+    vectorStoreId: string;
+    maxTokens: number;
+    question: string;
+    imageUrls?: string[];
+    previousResponseId?: string | null;
+  }): OpenAI.Responses.ResponseCreateParamsNonStreaming {
+    const request: OpenAI.Responses.ResponseCreateParamsNonStreaming = {
+      model: params.model,
+      instructions: params.instructions,
+      tools: this.buildTools(params.vectorStoreId),
+      tool_choice: 'auto',
+      store: true,
+      max_output_tokens: params.maxTokens,
+      input: this.buildUserInput(params.question, params.imageUrls),
+    };
+
+    if (params.previousResponseId) {
+      request.previous_response_id = params.previousResponseId;
+    }
+
+    return request;
+  }
+
+  private safeParseToolArgs(toolCall: any) {
+    try {
+      return JSON.parse(toolCall.arguments ?? '{}');
+    } catch (err) {
+      this.logger.error(
+        `Error parseando argumentos de tool ${toolCall.name}`,
+        err,
+      );
+
+      return {};
+    }
+  }
+
+  private async handleCrearTicketTool(toolCall: any, args: any) {
+    try {
+      const ticket = await this.crmService.create({
+        titulo: args.titulo,
+        descripcion: args.descripcion,
+      });
+
+      return {
+        type: 'function_call_output',
+        call_id: toolCall.call_id,
+        output: JSON.stringify({
+          status: 'success',
+          ticket_id: ticket.id,
+        }),
+      };
+    } catch (err) {
+      this.logger.error('Error creando ticket CRM', err);
+
+      return {
+        type: 'function_call_output',
+        call_id: toolCall.call_id,
+        output: JSON.stringify({
+          status: 'error',
+          message: 'No se pudo crear el ticket.',
+        }),
+      };
+    }
+  }
+
+  private async handleBuscarProductoTool(toolCall: any, args: any) {
+    const dto = {
+      producto:
+        typeof args.producto === 'string' && args.producto.trim().length > 0
+          ? args.producto.trim()
+          : null,
+      categorias: Array.isArray(args.categorias) ? args.categorias : [],
+      limit:
+        Number.isFinite(Number(args.limit)) && Number(args.limit) > 0
+          ? Math.trunc(Number(args.limit))
+          : 30,
+    };
+
+    let productos: any[] = [];
+
+    try {
+      const raw = await this.pos_erp_Service.search(dto);
+
+      if (Array.isArray(raw)) {
+        productos = raw;
+      }
+
+      this.logger.log(
+        `[OPENAI_TOOL_RESULT] buscar_producto_en_pos productos=${productos.length}\nPREVIEW:\n${JSON.stringify(
+          productos.slice(0, 10),
+          null,
+          2,
+        )}`,
+      );
+    } catch (err) {
+      this.logger.error('[OPENAI_TOOL_ERROR] Error llamando POS ERP', err);
+    }
+
+    return {
+      type: 'function_call_output',
+      call_id: toolCall.call_id,
+      output: JSON.stringify({
+        ok: true,
+        tipoResultado: 'busqueda_producto_pos',
+        producto: dto.producto,
+        categorias: dto.categorias,
+        total: productos.length,
+        productos,
+      }),
+    };
+  }
+
+  private async handleListarCatalogoTool(toolCall: any, args: any) {
+    const dto: BotListarCatalogoDto = {
+      consulta: typeof args.consulta === 'string' ? args.consulta : '',
+      incluirEjemplos:
+        typeof args.incluirEjemplos === 'boolean' ? args.incluirEjemplos : true,
+    };
+
+    const parsedLimit = Number(args.limit);
+
+    if (Number.isFinite(parsedLimit) && parsedLimit > 0) {
+      dto.limit = Math.trunc(parsedLimit);
+    }
+
+    let toolPayload: any = {
+      ok: false,
+      tipoResultado: 'catalogo_pos',
+      consulta: dto.consulta,
+      totalGrupos: 0,
+      grupos: [],
+      mensajeInterno:
+        'No se pudo consultar el catálogo POS. No asumir que no hay productos.',
+    };
+
+    try {
+      const raw = await this.pos_erp_Service.listar_catalogo_pos(dto);
+
+      const grupos = Array.isArray(raw) ? raw : [];
+
+      toolPayload = {
+        ok: true,
+        tipoResultado: 'catalogo_pos',
+        consulta: dto.consulta,
+        incluirEjemplos: dto.incluirEjemplos,
+        totalGrupos: grupos.length,
+        grupos,
+        reglasInventario: {
+          CON_STOCK: 'Producto con existencia disponible para venta inmediata.',
+          SIN_STOCK_PARA_PEDIDO:
+            'Producto sin existencia actual, pero puede mencionarse como opción para pedido o apartado.',
+        },
+      };
+
+      this.logger.log(
+        `[OPENAI_TOOL_RESULT] listar_catalogo_pos grupos=${grupos.length}\nPREVIEW:\n${JSON.stringify(
+          grupos.slice(0, 10).map((g) => ({
+            categoria: g?.categoria?.nombre ?? null,
+            totalProductosRelacionados: g?.totalProductosRelacionados ?? null,
+            totalConStock: g?.totalConStock ?? null,
+            totalParaPedido: g?.totalParaPedido ?? null,
+            ejemplos: Array.isArray(g?.ejemplos)
+              ? g.ejemplos.slice(0, 5).map((p) => ({
+                  id: p.id,
+                  nombre: p.nombre,
+                  precio: p.precio,
+                  totalDisponible: p.totalDisponible,
+                  inventarioEstado: p.inventarioEstado,
+                }))
+              : [],
+          })),
+          null,
+          2,
+        )}`,
+      );
+    } catch (err) {
+      this.logger.error(
+        '[OPENAI_TOOL_ERROR] Error llamando listar_catalogo_pos',
+        err,
+      );
+    }
+
+    return {
+      type: 'function_call_output',
+      call_id: toolCall.call_id,
+      output: JSON.stringify(toolPayload),
+    };
+  }
+
+  private async buildToolOutputs(functionCalls: any[]) {
+    const toolOutputs: any[] = [];
+
+    for (const toolCall of functionCalls) {
+      const args = this.safeParseToolArgs(toolCall);
+
+      if (toolCall.name === 'crear_ticket_soporte') {
+        toolOutputs.push(await this.handleCrearTicketTool(toolCall, args));
+        continue;
+      }
+
+      if (toolCall.name === 'buscar_producto_en_pos') {
+        toolOutputs.push(await this.handleBuscarProductoTool(toolCall, args));
+        continue;
+      }
+
+      if (toolCall.name === 'listar_catalogo_pos') {
+        toolOutputs.push(await this.handleListarCatalogoTool(toolCall, args));
+        continue;
+      }
+
+      toolOutputs.push({
+        type: 'function_call_output',
+        call_id: toolCall.call_id,
+        output: JSON.stringify({
+          status: 'error',
+          message: `Tool no soportada: ${toolCall.name}`,
+        }),
+      });
+    }
+
+    return toolOutputs;
+  }
+
+  private async runResponseLoop(params: {
+    baseRequest: OpenAI.Responses.ResponseCreateParamsNonStreaming;
+    model: string;
+    instructions: string;
+    vectorStoreId: string;
+    maxTokens: number;
+  }): Promise<ReplyResult> {
+    let response = await this.openai.responses.create(params.baseRequest);
+
+    this.logger.log(`First Response es:\n${JSON.stringify(response, null, 2)}`);
+
+    for (let depth = 0; depth < 3; depth++) {
+      const functionCalls = (response.output ?? []).filter(
+        (item: any) => item.type === 'function_call',
+      );
+
+      if (!functionCalls.length) {
+        return {
+          reply: response.output_text ?? '',
+          responseId: response.id ?? null,
+        };
+      }
+
+      const toolOutputs = await this.buildToolOutputs(functionCalls as any[]);
+
+      response = await this.openai.responses.create({
+        model: params.model,
+        instructions: params.instructions,
+        input: toolOutputs,
+        previous_response_id: response.id,
+        tools: this.buildTools(params.vectorStoreId),
+        tool_choice: 'auto',
+        store: true,
+        max_output_tokens: params.maxTokens,
+      });
+
+      this.logger.log(
+        `Response después de tools depth=${depth + 1}:\n${JSON.stringify(
+          response,
+          null,
+          2,
+        )}`,
+      );
+    }
+
+    return {
+      reply: 'No pude completar la respuesta en este momento.',
+      responseId: null,
+    };
+  }
+
+  /**
+   * RESPONDER CON EL CONTEXTO PRINCIPAL - PARA PRODUCCIÓN
+   * @param params
+   * @returns
+   */
   async replyWithContext(params: ReplyParams): Promise<ReplyResult> {
-    const { empresaNombre, imageUrls, question, manual, previousResponseId } =
-      params;
+    const {
+      empresaNombre,
+      imageUrls,
+      videoFrameUrls,
+      question,
+      manual,
+      previousResponseId,
+    } = params;
 
     const VECTOR_STORE_ID = this.config.get<string>('VECTOR_STORE_ID') ?? '';
 
@@ -188,13 +574,14 @@ export class OpenAiIaService {
 
     if (!botParams) {
       this.logger.error('Configuración del bot no encontrada en BD');
+
       return {
         reply: 'Configuración del asistente no disponible en este momento.',
         responseId: null,
       };
     }
 
-    const model = this.config.get<string>('OPENAI_MODEL') ?? 'gpt-5.5';
+    const model = this.config.get<string>('OPENAI_MODEL') ?? 'gpt-5.4-mini';
     const maxTokens = botParams.maxCompletionTokens ?? 1200;
 
     const instructions = this.buildInstructions(
@@ -203,209 +590,40 @@ export class OpenAiIaService {
       botParams.systemPrompt,
     );
 
-    const baseRequest: OpenAI.Responses.ResponseCreateParamsNonStreaming = {
+    const mediaContext = this.buildMediaContext({
+      audioUrls: params.audioUrls,
+      videoUrls: params.videoUrls,
+      documentUrls: params.documentUrls,
+
+      audioTranscripts: params.audioTranscripts,
+      videoTranscripts: params.videoTranscripts,
+      documentTexts: params.documentTexts,
+    });
+
+    const questionWithMedia = [question, mediaContext]
+      .filter((part) => part && part.trim().length > 0)
+      .join('\n\n');
+
+    const safeImageUrls = [...(imageUrls ?? []), ...(videoFrameUrls ?? [])];
+
+    const baseRequest = this.buildResponseRequest({
       model,
       instructions,
-      tools: [
-        {
-          type: 'file_search',
-          vector_store_ids: [VECTOR_STORE_ID],
-        },
-        ...OPENAI_TOOLS,
-      ],
-      tool_choice: 'auto',
-      store: true,
-      max_output_tokens: maxTokens,
-      input: this.buildUserInput(question, imageUrls),
-    };
-
-    // ingreso la response id anterior
-    if (previousResponseId) {
-      baseRequest.previous_response_id = previousResponseId;
-    }
+      vectorStoreId: VECTOR_STORE_ID,
+      maxTokens,
+      question: questionWithMedia,
+      imageUrls: safeImageUrls,
+      previousResponseId,
+    });
 
     try {
-      const firstResponse = await this.openai.responses.create(baseRequest);
-
-      this.logger.log(
-        `First Response es:\n${JSON.stringify(firstResponse, null, 2)}`,
-      );
-
-      let response = firstResponse;
-
-      for (let depth = 0; depth < 3; depth++) {
-        const functionCalls = (response.output ?? []).filter(
-          (item: any) => item.type === 'function_call',
-        );
-
-        if (!functionCalls.length) {
-          return {
-            reply: response.output_text ?? '',
-            responseId: response.id ?? null,
-          };
-        }
-
-        const toolOutputs: any[] = [];
-
-        for (const toolCall of functionCalls as any[]) {
-          let args: any = {};
-          try {
-            args = JSON.parse(toolCall.arguments ?? '{}');
-          } catch (err) {
-            this.logger.error(
-              `Error parseando argumentos de tool ${toolCall.name}`,
-              err,
-            );
-          }
-
-          if (toolCall.name === 'crear_ticket_soporte') {
-            try {
-              const ticket = await this.crmService.create({
-                titulo: args.titulo,
-                descripcion: args.descripcion,
-              });
-
-              toolOutputs.push({
-                type: 'function_call_output',
-                call_id: toolCall.call_id,
-                output: JSON.stringify({
-                  status: 'success',
-                  ticket_id: ticket.id,
-                }),
-              });
-            } catch (err) {
-              this.logger.error('Error creando ticket CRM', err);
-              toolOutputs.push({
-                type: 'function_call_output',
-                call_id: toolCall.call_id,
-                output: JSON.stringify({
-                  status: 'error',
-                }),
-              });
-            }
-          }
-
-          if (toolCall.name === 'buscar_producto_en_pos') {
-            const dto = {
-              producto: args.producto,
-              categorias: Array.isArray(args.categorias) ? args.categorias : [],
-            };
-
-            let productos: any[] = [];
-            try {
-              const raw = await this.pos_erp_Service.search(dto);
-              if (Array.isArray(raw)) {
-                productos = raw;
-              }
-            } catch (err) {
-              this.logger.error('Error llamando POS ERP', err);
-            }
-
-            toolOutputs.push({
-              type: 'function_call_output',
-              call_id: toolCall.call_id,
-              output: JSON.stringify(productos),
-            });
-          }
-
-          if (toolCall.name === 'listar_catalogo_pos') {
-            const dto: BotListarCatalogoDto = {
-              consulta: typeof args.consulta === 'string' ? args.consulta : '',
-              incluirEjemplos:
-                typeof args.incluirEjemplos === 'boolean'
-                  ? args.incluirEjemplos
-                  : true,
-            };
-
-            const parsedLimit = Number(args.limit);
-
-            if (Number.isFinite(parsedLimit) && parsedLimit > 0) {
-              dto.limit = Math.trunc(parsedLimit);
-            }
-
-            let toolPayload: any = {
-              ok: false,
-              tipoResultado: 'catalogo_pos',
-              consulta: dto.consulta,
-              totalGrupos: 0,
-              grupos: [],
-              mensajeInterno:
-                'No se pudo consultar el catálogo POS. No asumir que no hay productos.',
-            };
-
-            try {
-              const raw = await this.pos_erp_Service.listar_catalogo_pos(dto);
-
-              const grupos = Array.isArray(raw) ? raw : [];
-
-              toolPayload = {
-                ok: true,
-                tipoResultado: 'catalogo_pos',
-                consulta: dto.consulta,
-                incluirEjemplos: dto.incluirEjemplos,
-                totalGrupos: grupos.length,
-                grupos,
-                reglasInventario: {
-                  CON_STOCK:
-                    'Producto con existencia disponible para venta inmediata.',
-                  SIN_STOCK_PARA_PEDIDO:
-                    'Producto sin existencia actual, pero puede mencionarse como opción para pedido o apartado.',
-                },
-              };
-
-              this.logger.log(
-                `[OPENAI_TOOL_RESULT] listar_catalogo_pos grupos=${grupos.length}\nPREVIEW:\n${JSON.stringify(
-                  grupos.slice(0, 10).map((g) => ({
-                    categoria: g?.categoria?.nombre ?? null,
-                    totalProductosRelacionados:
-                      g?.totalProductosRelacionados ?? null,
-                    totalConStock: g?.totalConStock ?? null,
-                    totalParaPedido: g?.totalParaPedido ?? null,
-                    ejemplos: Array.isArray(g?.ejemplos)
-                      ? g.ejemplos.slice(0, 5).map((p) => ({
-                          id: p.id,
-                          nombre: p.nombre,
-                          precio: p.precio,
-                          totalDisponible: p.totalDisponible,
-                          inventarioEstado: p.inventarioEstado,
-                        }))
-                      : [],
-                  })),
-                  null,
-                  2,
-                )}`,
-              );
-            } catch (err) {
-              this.logger.error(
-                '[OPENAI_TOOL_ERROR] Error llamando listar_catalogo_pos',
-                err,
-              );
-            }
-
-            toolOutputs.push({
-              type: 'function_call_output',
-              call_id: toolCall.call_id,
-              output: JSON.stringify(toolPayload),
-            });
-          }
-        }
-
-        response = await this.openai.responses.create({
-          model,
-          instructions,
-          input: toolOutputs,
-          previous_response_id: response.id,
-          tools: OPENAI_TOOLS,
-          tool_choice: 'auto',
-          store: true,
-          max_output_tokens: maxTokens,
-        });
-      }
-
-      return {
-        reply: 'No pude completar la respuesta en este momento.',
-        responseId: null,
-      };
+      return await this.runResponseLoop({
+        baseRequest,
+        model,
+        instructions,
+        vectorStoreId: VECTOR_STORE_ID,
+        maxTokens,
+      });
     } catch (error) {
       this.logger.error('Error general OpenAiIaService', error);
 
@@ -418,5 +636,105 @@ export class OpenAiIaService {
         responseId: null,
       };
     }
+  }
+
+  async replyWithContextStreamed(
+    params: ReplyStreamParams,
+  ): Promise<ReplyResult> {
+    const {
+      empresaNombre,
+      imageUrls,
+      videoFrameUrls,
+      question,
+      manual,
+      previousResponseId,
+      onToken,
+    } = params;
+
+    const VECTOR_STORE_ID = this.config.get<string>('VECTOR_STORE_ID') ?? '';
+
+    const botParams = await this.prisma.bot.findUnique({
+      where: { id: 1 },
+      select: {
+        systemPrompt: true,
+        temperature: true,
+        maxCompletionTokens: true,
+        topP: true,
+      },
+    });
+
+    if (!botParams) {
+      return {
+        reply: 'Configuración del asistente no disponible en este momento.',
+        responseId: null,
+      };
+    }
+
+    const model = this.config.get<string>('OPENAI_MODEL') ?? 'gpt-5.4-mini';
+    const maxTokens = botParams.maxCompletionTokens ?? 1200;
+
+    const instructions = this.buildInstructions(
+      empresaNombre,
+      manual,
+      botParams.systemPrompt,
+    );
+
+    const mediaContext = this.buildMediaContext({
+      audioUrls: params.audioUrls,
+      videoUrls: params.videoUrls,
+      documentUrls: params.documentUrls,
+      audioTranscripts: params.audioTranscripts,
+      videoTranscripts: params.videoTranscripts,
+      documentTexts: params.documentTexts,
+    });
+
+    const questionWithMedia = [question, mediaContext]
+      .filter((part) => part && part.trim().length > 0)
+      .join('\n\n');
+
+    const safeImageUrls = [...(imageUrls ?? []), ...(videoFrameUrls ?? [])];
+
+    const request = this.buildResponseRequest({
+      model,
+      instructions,
+      vectorStoreId: VECTOR_STORE_ID,
+      maxTokens,
+      question: questionWithMedia,
+      imageUrls: safeImageUrls,
+      previousResponseId,
+    });
+
+    const stream = await this.openai.responses.create({
+      ...request,
+      stream: true,
+    });
+
+    let fullText = '';
+    let responseId: string | null = null;
+
+    for await (const event of stream) {
+      if (event.type === 'response.created') {
+        responseId = event.response.id;
+      }
+
+      if (event.type === 'response.output_text.delta') {
+        fullText += event.delta;
+        onToken?.(event.delta);
+      }
+
+      if (event.type === 'response.completed') {
+        responseId = event.response.id;
+      }
+
+      // if (event.type === 'response.error') {
+      //   this.logger.error(`OpenAI stream error: ${JSON.stringify(event)}`);
+      // }
+    }
+
+    return {
+      reply:
+        fullText.trim() || 'No pude generar una respuesta en este momento.',
+      responseId,
+    };
   }
 }

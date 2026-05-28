@@ -6,6 +6,7 @@ import { OpenAiIaService } from './app/open-ia-rag.service';
 import { OPENAI_CLIENT } from './infraestructure/open-ia.client';
 import { CrmModule } from 'src/crm/crm.module';
 import { PosFunctionsModule } from 'src/pos-functions/pos-functions.module';
+import { AudioTranscriptionService } from './app/audio-transcription.service';
 
 @Module({
   imports: [ConfigModule, PrismaModuleModule, CrmModule, PosFunctionsModule],
@@ -20,7 +21,8 @@ import { PosFunctionsModule } from 'src/pos-functions/pos-functions.module';
       inject: [ConfigService],
     },
     OpenAiIaService,
+    AudioTranscriptionService,
   ],
-  exports: [OpenAiIaService],
+  exports: [OpenAiIaService, AudioTranscriptionService],
 })
 export class OpenAiModule {}
